@@ -1,0 +1,12 @@
+{
+  "name": "perler-beads-miniprogram",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "miniprogram-api-typings": "^3.12.2",
+    "typescript": "^5.7.2"
+  }
+}

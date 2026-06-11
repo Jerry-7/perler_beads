@@ -1,0 +1,51 @@
+<view class="page">
+  <view class="panel controls">
+    <button class="primary" bindtap="chooseImage">选择图片</button>
+    <view wx:if="{{imagePath}}" class="preview">
+      <image class="preview-image" src="{{imagePath}}" mode="aspectFit" />
+    </view>
+
+    <view class="form-grid">
+      <label class="field">
+        <text>宽度格数</text>
+        <input type="number" value="{{widthCells}}" bindinput="onWidthInput" />
+      </label>
+      <label class="field">
+        <text>高度格数</text>
+        <input type="number" value="{{heightCells}}" bindinput="onHeightInput" />
+      </label>
+    </view>
+
+    <button class="primary" loading="{{isGenerating}}" disabled="{{!canGenerate || isGenerating}}" bindtap="generatePattern">
+      生成图纸
+    </button>
+  </view>
+
+  <view wx:if="{{result}}" class="panel">
+    <view class="toolbar">
+      <text class="title">{{result.widthCells}} x {{result.heightCells}}</text>
+      <view class="actions">
+        <button size="mini" bindtap="exportPng">导出 PNG</button>
+        <button size="mini" bindtap="exportJson">导出 JSON</button>
+      </view>
+    </view>
+    <canvas
+      class="pattern-canvas"
+      type="2d"
+      id="patternCanvas"
+      style="width: {{canvasCssWidth}}px; height: {{canvasCssHeight}}px;"
+    ></canvas>
+  </view>
+
+  <view wx:if="{{usage.length}}" class="panel">
+    <text class="title">色号统计</text>
+    <view class="usage-list">
+      <view wx:for="{{usage}}" wx:key="beadCode" class="usage-row">
+        <view class="swatch" style="background: rgb({{item.beadRgb[0]}}, {{item.beadRgb[1]}}, {{item.beadRgb[2]}});"></view>
+        <text class="usage-code">{{item.beadCode}}</text>
+        <text class="usage-name">{{item.beadName}}</text>
+        <text class="usage-count">{{item.count}}</text>
+      </view>
+    </view>
+  </view>
+</view>
