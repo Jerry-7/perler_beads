@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.models import GenerationResponse, GenerationStatusResponse, PaletteResponse, PatternSizeRecommendation
 from app.palette import PALETTE_VERSION, get_enabled_palette, get_palette
+from app.services.color_simplification import ColorSimplificationProfile
 from app.services.generation import GenerationError, generation_store
 from app.services.size_recommendation import SizeRecommendationError, recommend_pattern_size_from_image
 
@@ -48,6 +49,7 @@ async def create_generation(
     widthCells: int = Form(...),
     heightCells: int = Form(...),
     sourceMode: str = Form("auto"),
+    colorComplexity: str = Form("balanced"),
 ) -> GenerationResponse:
     if widthCells < 1 or heightCells < 1:
         raise HTTPException(status_code=400, detail="widthCells and heightCells must be positive")
@@ -55,6 +57,13 @@ async def create_generation(
         raise HTTPException(status_code=400, detail="widthCells and heightCells must be <= 200")
     if sourceMode not in {"auto", "pixel-art", "resample"}:
         raise HTTPException(status_code=400, detail="sourceMode must be auto, pixel-art, or resample")
+    try:
+        color_complexity = ColorSimplificationProfile(colorComplexity)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="colorComplexity must be minimal, simple, balanced, detailed, or original",
+        ) from exc
     if not image.content_type or not image.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Uploaded file must be an image")
 
@@ -69,6 +78,7 @@ async def create_generation(
             height_cells=heightCells,
             palette=get_enabled_palette(),
             source_mode=sourceMode,
+            color_complexity=color_complexity,
         )
     except GenerationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

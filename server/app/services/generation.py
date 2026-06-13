@@ -7,6 +7,7 @@ from app.color_matching import PaletteEmptyError, find_nearest_color
 from app.models import BeadCell, BeadUsage, PaletteColor, PatternResult, PixelCell
 from app.palette import PALETTE_VERSION
 from app.providers.mock_pixel_art import MockPixelArtProvider, PixelArtProviderError
+from app.services.color_simplification import ColorSimplificationProfile, simplify_low_usage_similar_colors
 
 
 class GenerationError(ValueError):
@@ -33,12 +34,13 @@ class GenerationStore:
         height_cells: int,
         palette: list[PaletteColor],
         source_mode: str = "auto",
+        color_complexity: ColorSimplificationProfile = ColorSimplificationProfile.BALANCED,
     ) -> Generation:
         generation = Generation(id=uuid4().hex, status="processing")
         self._items[generation.id] = generation
 
         try:
-            generation.result = self._generate(image_bytes, width_cells, height_cells, palette, source_mode)
+            generation.result = self._generate(image_bytes, width_cells, height_cells, palette, source_mode, color_complexity)
             generation.status = "completed"
         except (PaletteEmptyError, PixelArtProviderError) as exc:
             generation.status = "failed"
@@ -57,10 +59,9 @@ class GenerationStore:
         height_cells: int,
         palette: list[PaletteColor],
         source_mode: str,
+        color_complexity: ColorSimplificationProfile,
     ) -> PatternResult:
         pixel_matrix = self._provider.convert(image_bytes, width_cells, height_cells, source_mode)
-        usage_counter: Counter[str] = Counter()
-        usage_colors: dict[str, PaletteColor] = {}
         rows: list[list[PixelCell | BeadCell]] = []
 
         for pixel_row in pixel_matrix:
@@ -71,8 +72,6 @@ class GenerationStore:
                     continue
 
                 bead, distance = find_nearest_color(pixel.rgb, palette)
-                usage_counter[bead.code] += 1
-                usage_colors[bead.code] = bead
                 row.append(
                     BeadCell(
                         x=pixel.x,
@@ -86,11 +85,20 @@ class GenerationStore:
                 )
             rows.append(row)
 
+        rows = simplify_low_usage_similar_colors(rows, profile=color_complexity)
+        usage_counter: Counter[str] = Counter()
+        usage_colors: dict[str, BeadCell] = {}
+        for row in rows:
+            for cell in row:
+                if isinstance(cell, BeadCell):
+                    usage_counter[cell.beadCode] += 1
+                    usage_colors[cell.beadCode] = cell
+
         usage = [
             BeadUsage(
                 beadCode=code,
-                beadName=usage_colors[code].name,
-                beadRgb=usage_colors[code].rgb,
+                beadName=usage_colors[code].beadName,
+                beadRgb=usage_colors[code].beadRgb,
                 count=count,
             )
             for code, count in sorted(usage_counter.items(), key=lambda item: item[0])

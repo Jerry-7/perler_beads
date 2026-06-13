@@ -2,7 +2,10 @@ from io import BytesIO
 
 from PIL import Image
 
+from app.models import PaletteColor
 from app.palette import get_enabled_palette
+from app.providers.base import PixelArtCell
+from app.services.color_simplification import ColorSimplificationProfile
 from app.services.generation import GenerationStore
 
 
@@ -71,3 +74,92 @@ def test_resample_mode_fills_requested_dimensions_without_letterbox() -> None:
 
     assert empty_count == 0
     assert usage_count == 100
+
+
+def test_generation_simplifies_low_usage_similar_bead_colors() -> None:
+    class FixedProvider:
+        def convert(
+            self,
+            image_bytes: bytes,
+            width_cells: int,
+            height_cells: int,
+            source_mode: str = "auto",
+        ) -> list[list[PixelArtCell]]:
+            return [
+                [
+                    PixelArtCell(x=0, y=0, rgb=(100, 100, 100)),
+                    PixelArtCell(x=1, y=0, rgb=(100, 100, 100)),
+                ],
+                [
+                    PixelArtCell(x=0, y=1, rgb=(100, 100, 100)),
+                    PixelArtCell(x=1, y=1, rgb=(110, 108, 105)),
+                ],
+            ]
+
+    store = GenerationStore()
+    store._provider = FixedProvider()
+
+    generation = store.create(
+        image_bytes=b"unused",
+        width_cells=2,
+        height_cells=2,
+        palette=[
+            PaletteColor(code="A", name="A", rgb=(100, 100, 100)),
+            PaletteColor(code="B", name="B", rgb=(110, 108, 105)),
+        ],
+    )
+
+    assert generation.result is not None
+    assert len(generation.result.usage) == 1
+    assert generation.result.usage[0].count == 4
+
+
+def test_generation_respects_color_complexity_profile() -> None:
+    class FixedProvider:
+        def convert(
+            self,
+            image_bytes: bytes,
+            width_cells: int,
+            height_cells: int,
+            source_mode: str = "auto",
+        ) -> list[list[PixelArtCell]]:
+            return [
+                [
+                    PixelArtCell(x=0, y=0, rgb=(100, 100, 100)),
+                    PixelArtCell(x=1, y=0, rgb=(100, 100, 100)),
+                ],
+                [
+                    PixelArtCell(x=0, y=1, rgb=(100, 100, 100)),
+                    PixelArtCell(x=1, y=1, rgb=(138, 100, 100)),
+                ],
+            ]
+
+    palette = [
+        PaletteColor(code="A", name="A", rgb=(100, 100, 100)),
+        PaletteColor(code="B", name="B", rgb=(138, 100, 100)),
+    ]
+
+    simple_store = GenerationStore()
+    simple_store._provider = FixedProvider()
+    simple = simple_store.create(
+        image_bytes=b"unused",
+        width_cells=2,
+        height_cells=2,
+        palette=palette,
+        color_complexity=ColorSimplificationProfile.SIMPLE,
+    )
+
+    detailed_store = GenerationStore()
+    detailed_store._provider = FixedProvider()
+    detailed = detailed_store.create(
+        image_bytes=b"unused",
+        width_cells=2,
+        height_cells=2,
+        palette=palette,
+        color_complexity=ColorSimplificationProfile.DETAILED,
+    )
+
+    assert simple.result is not None
+    assert detailed.result is not None
+    assert len(simple.result.usage) == 1
+    assert len(detailed.result.usage) == 2

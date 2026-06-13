@@ -1,6 +1,7 @@
-import { getGeneration, recommendPatternSize, uploadGeneration } from "../../utils/api";
+import { type ColorComplexity, getGeneration, recommendPatternSize, uploadGeneration } from "../../utils/api";
 import { calculatePreviewCanvasSize } from "../../utils/canvasSizing";
 import { shouldDrawCellLabel } from "../../utils/patternDrawing";
+import { applyPatternSizeOption, PATTERN_SIZE_OPTIONS } from "../../utils/patternSizeOptions";
 import { saveImageWithAlbumPermission } from "../../utils/photoAlbum";
 import type { BeadUsage, PatternResult, PatternSizeRecommendation } from "../../utils/types";
 import { isEmptyCell } from "../../utils/types";
@@ -8,12 +9,24 @@ import { isEmptyCell } from "../../utils/types";
 Page({
   data: {
     imagePath: "",
-    widthCells: 48,
-    heightCells: 48,
+    widthCells: 52,
+    heightCells: 52,
+    patternSizeIndex: 0,
+    patternSizeOptions: PATTERN_SIZE_OPTIONS,
+    isCustomSize: false,
     isGenerating: false,
     isRecommendingSize: false,
     canGenerate: false,
     sizeRecommendationText: "",
+    colorComplexity: "balanced" as ColorComplexity,
+    colorComplexityIndex: 2,
+    colorComplexityOptions: [
+      { label: "极简", value: "minimal" },
+      { label: "少色", value: "simple" },
+      { label: "均衡", value: "balanced" },
+      { label: "细节", value: "detailed" },
+      { label: "原色", value: "original" }
+    ],
     result: null as PatternResult | null,
     usage: [] as BeadUsage[],
     canvasCssWidth: 320,
@@ -71,6 +84,29 @@ Page({
     this.setData({ heightCells: Number(event.detail.value) || 0 });
   },
 
+  onPatternSizeChange(event: WechatMiniprogram.PickerChange) {
+    const index = Number(event.detail.value) || 0;
+    const nextSize = applyPatternSizeOption(index, this.data.widthCells, this.data.heightCells);
+    this.setData({
+      patternSizeIndex: index,
+      widthCells: nextSize.widthCells,
+      heightCells: nextSize.heightCells,
+      isCustomSize: nextSize.isCustomSize
+    });
+  },
+
+  onColorComplexityChange(event: WechatMiniprogram.PickerChange) {
+    const index = Number(event.detail.value) || 0;
+    const option = this.data.colorComplexityOptions[index];
+    if (!option) {
+      return;
+    }
+    this.setData({
+      colorComplexity: option.value as ColorComplexity,
+      colorComplexityIndex: index
+    });
+  },
+
   async applyRecommendedSize(imagePath: string) {
     this.setData({ isRecommendingSize: true });
     try {
@@ -78,11 +114,14 @@ Page({
       if (this.data.imagePath !== imagePath) {
         return;
       }
-      this.setData({
-        widthCells: recommendation.widthCells,
-        heightCells: recommendation.heightCells,
+      const nextData: Record<string, string | number> = {
         sizeRecommendationText: this.formatSizeRecommendation(recommendation)
-      });
+      };
+      if (this.data.isCustomSize) {
+        nextData.widthCells = recommendation.widthCells;
+        nextData.heightCells = recommendation.heightCells;
+      }
+      this.setData(nextData);
     } catch (error) {
       wx.showToast({ title: error instanceof Error ? error.message : "推荐尺寸失败", icon: "none" });
     } finally {
@@ -101,7 +140,7 @@ Page({
   },
 
   async generatePattern() {
-    const { imagePath, widthCells, heightCells } = this.data;
+    const { imagePath, widthCells, heightCells, colorComplexity } = this.data;
     if (!imagePath || widthCells < 1 || heightCells < 1) {
       wx.showToast({ title: "请先选择图片和格数", icon: "none" });
       return;
@@ -109,7 +148,7 @@ Page({
 
     this.setData({ isGenerating: true });
     try {
-      const created = await uploadGeneration(imagePath, widthCells, heightCells);
+      const created = await uploadGeneration(imagePath, widthCells, heightCells, "resample", colorComplexity);
       const completed = await this.waitForGeneration(created.generationId);
       if (completed.status !== "completed" || !completed.result) {
         throw new Error(completed.error || "生成失败");

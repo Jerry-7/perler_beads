@@ -13,7 +13,8 @@
     "miniprogram/**/*.test.ts",
     "miniprogram/utils/canvasSizing.ts",
     "miniprogram/utils/patternDrawing.ts",
-    "miniprogram/utils/photoAlbum.ts"
+    "miniprogram/utils/photoAlbum.ts",
+    "miniprogram/utils/patternSizeOptions.ts"
   ],
   "exclude": []
 }

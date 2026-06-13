@@ -7,7 +7,14 @@
     <text wx:if="{{isRecommendingSize}}" class="helper-text">正在计算推荐格数...</text>
     <text wx:elif="{{sizeRecommendationText}}" class="helper-text">{{sizeRecommendationText}}</text>
 
-    <view class="form-grid">
+    <label class="field">
+      <text>图纸尺寸</text>
+      <picker mode="selector" range="{{patternSizeOptions}}" range-key="label" value="{{patternSizeIndex}}" bindchange="onPatternSizeChange">
+        <view class="picker-field">{{patternSizeOptions[patternSizeIndex].label}}</view>
+      </picker>
+    </label>
+
+    <view wx:if="{{isCustomSize}}" class="form-grid">
       <label class="field">
         <text>宽度格数</text>
         <input type="number" value="{{widthCells}}" bindinput="onWidthInput" />
@@ -17,6 +24,13 @@
         <input type="number" value="{{heightCells}}" bindinput="onHeightInput" />
       </label>
     </view>
+
+    <label class="field">
+      <text>颜色复杂度</text>
+      <picker mode="selector" range="{{colorComplexityOptions}}" range-key="label" value="{{colorComplexityIndex}}" bindchange="onColorComplexityChange">
+        <view class="picker-field">{{colorComplexityOptions[colorComplexityIndex].label}}</view>
+      </picker>
+    </label>
 
     <button class="primary" loading="{{isGenerating}}" disabled="{{!canGenerate || isGenerating}}" bindtap="generatePattern">
       生成图纸

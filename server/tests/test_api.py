@@ -69,3 +69,24 @@ def test_create_generation_resample_mode_fills_requested_dimensions() -> None:
 
     assert empty_count == 0
     assert usage_count == 100
+
+
+def test_create_generation_accepts_color_complexity() -> None:
+    for complexity in ["minimal", "simple", "balanced", "detailed", "original"]:
+        response = client.post(
+            "/api/generations",
+            data={"widthCells": "8", "heightCells": "8", "colorComplexity": complexity},
+            files={"image": ("test.png", make_image(), "image/png")},
+        )
+
+        assert response.status_code == 200
+
+
+def test_rejects_invalid_color_complexity() -> None:
+    response = client.post(
+        "/api/generations",
+        data={"widthCells": "8", "heightCells": "8", "colorComplexity": "wild"},
+        files={"image": ("test.png", make_image(), "image/png")},
+    )
+
+    assert response.status_code == 400

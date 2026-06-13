@@ -7,6 +7,7 @@ interface PaletteResponse {
 }
 
 export type SourceMode = "auto" | "pixel-art" | "resample";
+export type ColorComplexity = "minimal" | "simple" | "balanced" | "detailed" | "original";
 
 function request<T>(options: WechatMiniprogram.RequestOption): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -37,7 +38,8 @@ export function uploadGeneration(
   imagePath: string,
   widthCells: number,
   heightCells: number,
-  sourceMode: SourceMode = "resample"
+  sourceMode: SourceMode = "resample",
+  colorComplexity: ColorComplexity = "balanced"
 ): Promise<GenerationStatus> {
   return new Promise((resolve, reject) => {
     wx.uploadFile({
@@ -47,7 +49,8 @@ export function uploadGeneration(
       formData: {
         widthCells: String(widthCells),
         heightCells: String(heightCells),
-        sourceMode
+        sourceMode,
+        colorComplexity
       },
       success(response) {
         if (response.statusCode >= 200 && response.statusCode < 300) {

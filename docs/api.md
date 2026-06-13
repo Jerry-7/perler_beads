@@ -1,5 +1,15 @@
 # API
 
+## Color Complexity
+
+`POST /api/generations` accepts an optional `colorComplexity` form field:
+
+- `minimal`: fewest bead colors, merges similar low-usage colors most aggressively.
+- `simple`: fewer bead colors, merges similar low-usage colors more aggressively.
+- `balanced`: default backend behavior.
+- `detailed`: preserves more color detail.
+- `original`: keeps the original nearest-palette result without low-usage color merging.
+
 ## `GET /api/palette`
 
 返回当前内置拼豆色板。
