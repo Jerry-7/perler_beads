@@ -11,5 +11,6 @@
       "/*": ["miniprogram/*"]
     }
   },
-  "include": ["miniprogram/**/*.ts"]
+  "include": ["miniprogram/**/*.ts"],
+  "exclude": ["miniprogram/**/*.test.ts"]
 }

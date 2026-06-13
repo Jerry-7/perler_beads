@@ -1,9 +1,9 @@
-import { getGeneration, uploadGeneration } from "../../utils/api";
-import type { BeadUsage, PatternResult } from "../../utils/types";
+import { getGeneration, recommendPatternSize, uploadGeneration } from "../../utils/api";
+import { calculatePreviewCanvasSize } from "../../utils/canvasSizing";
+import { shouldDrawCellLabel } from "../../utils/patternDrawing";
+import { saveImageWithAlbumPermission } from "../../utils/photoAlbum";
+import type { BeadUsage, PatternResult, PatternSizeRecommendation } from "../../utils/types";
 import { isEmptyCell } from "../../utils/types";
-
-const MIN_CELL_SIZE = 16;
-const MAX_CANVAS_CSS_WIDTH = 680;
 
 Page({
   data: {
@@ -11,7 +11,9 @@ Page({
     widthCells: 48,
     heightCells: 48,
     isGenerating: false,
+    isRecommendingSize: false,
     canGenerate: false,
+    sizeRecommendationText: "",
     result: null as PatternResult | null,
     usage: [] as BeadUsage[],
     canvasCssWidth: 320,
@@ -22,8 +24,10 @@ Page({
     const setSelectedImage = (path: string) => {
       this.setData({
         imagePath: path,
-        canGenerate: true
+        canGenerate: true,
+        sizeRecommendationText: ""
       });
+      this.applyRecommendedSize(path);
     };
 
     if (wx.chooseMedia) {
@@ -67,6 +71,35 @@ Page({
     this.setData({ heightCells: Number(event.detail.value) || 0 });
   },
 
+  async applyRecommendedSize(imagePath: string) {
+    this.setData({ isRecommendingSize: true });
+    try {
+      const recommendation = await recommendPatternSize(imagePath);
+      if (this.data.imagePath !== imagePath) {
+        return;
+      }
+      this.setData({
+        widthCells: recommendation.widthCells,
+        heightCells: recommendation.heightCells,
+        sizeRecommendationText: this.formatSizeRecommendation(recommendation)
+      });
+    } catch (error) {
+      wx.showToast({ title: error instanceof Error ? error.message : "推荐尺寸失败", icon: "none" });
+    } finally {
+      if (this.data.imagePath === imagePath) {
+        this.setData({ isRecommendingSize: false });
+      }
+    }
+  },
+
+  formatSizeRecommendation(recommendation: PatternSizeRecommendation) {
+    const blockSize =
+      recommendation.detectedBlockWidth && recommendation.detectedBlockHeight
+        ? `，识别到 ${recommendation.detectedBlockWidth} x ${recommendation.detectedBlockHeight} 像素块`
+        : "";
+    return `推荐 ${recommendation.widthCells} x ${recommendation.heightCells}（原图 ${recommendation.sourceWidth} x ${recommendation.sourceHeight}${blockSize}）`;
+  },
+
   async generatePattern() {
     const { imagePath, widthCells, heightCells } = this.data;
     if (!imagePath || widthCells < 1 || heightCells < 1) {
@@ -82,7 +115,7 @@ Page({
         throw new Error(completed.error || "生成失败");
       }
 
-      const canvasSize = this.calculateCanvasSize(completed.result);
+      const canvasSize = calculatePreviewCanvasSize(completed.result, wx.getSystemInfoSync().windowWidth);
       this.setData({
         result: completed.result,
         usage: completed.result.usage,
@@ -116,14 +149,6 @@ Page({
       };
       poll();
     });
-  },
-
-  calculateCanvasSize(result: PatternResult) {
-    const cellSize = Math.max(MIN_CELL_SIZE, Math.floor(MAX_CANVAS_CSS_WIDTH / result.widthCells));
-    return {
-      width: result.widthCells * cellSize,
-      height: result.heightCells * cellSize
-    };
   },
 
   drawPattern(forExport: boolean, done?: (tempFilePath?: string) => void) {
@@ -160,7 +185,10 @@ Page({
         context.fillRect(0, 0, width, height);
         context.textAlign = "center";
         context.textBaseline = "middle";
-        context.font = `${Math.max(8, Math.floor(cellSize * 0.38))}px sans-serif`;
+        const drawLabels = shouldDrawCellLabel(cellSize, forExport);
+        if (drawLabels) {
+          context.font = `${Math.max(8, Math.floor(cellSize * 0.38))}px sans-serif`;
+        }
 
         for (const row of result.cells) {
           for (const cell of row) {
@@ -172,8 +200,10 @@ Page({
             } else {
               context.fillStyle = `rgb(${cell.beadRgb[0]}, ${cell.beadRgb[1]}, ${cell.beadRgb[2]})`;
               context.fillRect(x, y, cellSize, cellSize);
-              context.fillStyle = this.textColorFor(cell.beadRgb);
-              context.fillText(cell.beadCode, x + cellSize / 2, y + cellSize / 2);
+              if (drawLabels) {
+                context.fillStyle = this.textColorFor(cell.beadRgb);
+                context.fillText(cell.beadCode, x + cellSize / 2, y + cellSize / 2);
+              }
             }
             context.strokeStyle = "#cbd5e1";
             context.lineWidth = 0.5;
@@ -203,16 +233,21 @@ Page({
   },
 
   exportPng() {
-    this.drawPattern(true, (tempFilePath) => {
+    this.drawPattern(true, async (tempFilePath) => {
       if (!tempFilePath) {
         wx.showToast({ title: "导出失败", icon: "none" });
         return;
       }
-      wx.saveImageToPhotosAlbum({
-        filePath: tempFilePath,
-        success: () => wx.showToast({ title: "已保存图片", icon: "success" }),
-        fail: () => wx.showToast({ title: "保存失败，请检查权限", icon: "none" })
-      });
+      const result = await saveImageWithAlbumPermission(wx, tempFilePath);
+      if (result === "saved") {
+        wx.showToast({ title: "已保存图片", icon: "success" });
+        return;
+      }
+      if (result === "needs-settings") {
+        wx.showToast({ title: "请在设置中允许保存相册", icon: "none" });
+        return;
+      }
+      wx.showToast({ title: "保存失败，请检查权限", icon: "none" });
     });
   },
 

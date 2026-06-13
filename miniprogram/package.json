@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "tsc --noEmit"
+    "build": "tsc --noEmit",
+    "test": "tsc -p tsconfig.test.json && node --test dist-tests/**/*.test.js"
   },
   "devDependencies": {
     "miniprogram-api-typings": "^3.12.2",

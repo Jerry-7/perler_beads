@@ -1,10 +1,12 @@
 import { API_BASE_URL } from "./config";
-import type { GenerationStatus, PaletteColor } from "./types";
+import type { GenerationStatus, PaletteColor, PatternSizeRecommendation } from "./types";
 
 interface PaletteResponse {
   version: string;
   colors: PaletteColor[];
 }
+
+export type SourceMode = "auto" | "pixel-art" | "resample";
 
 function request<T>(options: WechatMiniprogram.RequestOption): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -31,7 +33,12 @@ export function getPalette(): Promise<PaletteResponse> {
   });
 }
 
-export function uploadGeneration(imagePath: string, widthCells: number, heightCells: number): Promise<GenerationStatus> {
+export function uploadGeneration(
+  imagePath: string,
+  widthCells: number,
+  heightCells: number,
+  sourceMode: SourceMode = "resample"
+): Promise<GenerationStatus> {
   return new Promise((resolve, reject) => {
     wx.uploadFile({
       url: `${API_BASE_URL}/api/generations`,
@@ -39,7 +46,8 @@ export function uploadGeneration(imagePath: string, widthCells: number, heightCe
       name: "image",
       formData: {
         widthCells: String(widthCells),
-        heightCells: String(heightCells)
+        heightCells: String(heightCells),
+        sourceMode
       },
       success(response) {
         if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -51,6 +59,30 @@ export function uploadGeneration(imagePath: string, widthCells: number, heightCe
           return;
         }
         reject(new Error(`上传失败：${response.statusCode}`));
+      },
+      fail(error) {
+        reject(new Error(error.errMsg));
+      }
+    });
+  });
+}
+
+export function recommendPatternSize(imagePath: string): Promise<PatternSizeRecommendation> {
+  return new Promise((resolve, reject) => {
+    wx.uploadFile({
+      url: `${API_BASE_URL}/api/pattern-size/recommendation`,
+      filePath: imagePath,
+      name: "image",
+      success(response) {
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          try {
+            resolve(JSON.parse(response.data) as PatternSizeRecommendation);
+          } catch {
+            reject(new Error("推荐尺寸解析失败"));
+          }
+          return;
+        }
+        reject(new Error(`推荐尺寸失败：${response.statusCode}`));
       },
       fail(error) {
         reject(new Error(error.errMsg));

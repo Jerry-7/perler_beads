@@ -4,6 +4,8 @@
     <view wx:if="{{imagePath}}" class="preview">
       <image class="preview-image" src="{{imagePath}}" mode="aspectFit" />
     </view>
+    <text wx:if="{{isRecommendingSize}}" class="helper-text">正在计算推荐格数...</text>
+    <text wx:elif="{{sizeRecommendationText}}" class="helper-text">{{sizeRecommendationText}}</text>
 
     <view class="form-grid">
       <label class="field">

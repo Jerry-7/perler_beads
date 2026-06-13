@@ -48,6 +48,17 @@ export interface GenerationStatus {
   result?: PatternResult;
 }
 
+export interface PatternSizeRecommendation {
+  widthCells: number;
+  heightCells: number;
+  sourceWidth: number;
+  sourceHeight: number;
+  detectedBlockWidth?: number | null;
+  detectedBlockHeight?: number | null;
+  confidence: number;
+  reason: string;
+}
+
 export function isEmptyCell(cell: PatternCell): cell is EmptyCell {
   return "empty" in cell && cell.empty === true;
 }
