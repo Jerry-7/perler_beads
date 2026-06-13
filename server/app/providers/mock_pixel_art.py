@@ -12,7 +12,13 @@ class PixelArtProviderError(ValueError):
 class MockPixelArtProvider:
     """Local placeholder for the future third-party AI pixel-art provider."""
 
-    def convert(self, image_bytes: bytes, width_cells: int, height_cells: int) -> list[list[PixelArtCell]]:
+    def convert(
+        self,
+        image_bytes: bytes,
+        width_cells: int,
+        height_cells: int,
+        source_mode: str = "auto",
+    ) -> list[list[PixelArtCell]]:
         try:
             original = Image.open(BytesIO(image_bytes)).convert("RGB")
         except UnidentifiedImageError as exc:
@@ -20,6 +26,13 @@ class MockPixelArtProvider:
 
         if original.width <= 0 or original.height <= 0:
             raise PixelArtProviderError("Uploaded image has invalid dimensions")
+
+        if source_mode == "resample":
+            resized = original.resize((width_cells, height_cells), Image.Resampling.LANCZOS)
+            return [
+                [PixelArtCell(x=x, y=y, rgb=resized.getpixel((x, y))) for x in range(width_cells)]
+                for y in range(height_cells)
+            ]
 
         scale = min(width_cells / original.width, height_cells / original.height)
         scaled_width = max(1, min(width_cells, round(original.width * scale)))

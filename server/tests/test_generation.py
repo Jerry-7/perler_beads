@@ -52,3 +52,22 @@ def test_generation_does_not_assign_bead_code_to_empty_cells() -> None:
 
     assert empty_cells
     assert all(not hasattr(cell, "beadCode") for cell in empty_cells)
+
+
+def test_resample_mode_fills_requested_dimensions_without_letterbox() -> None:
+    store = GenerationStore()
+
+    generation = store.create(
+        image_bytes=make_image(10, 5, (255, 0, 0)),
+        width_cells=10,
+        height_cells=10,
+        palette=get_enabled_palette(),
+        source_mode="resample",
+    )
+
+    assert generation.result is not None
+    empty_count = sum(1 for row in generation.result.cells for cell in row if getattr(cell, "empty", False))
+    usage_count = sum(item.count for item in generation.result.usage)
+
+    assert empty_count == 0
+    assert usage_count == 100

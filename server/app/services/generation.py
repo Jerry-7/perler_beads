@@ -32,12 +32,13 @@ class GenerationStore:
         width_cells: int,
         height_cells: int,
         palette: list[PaletteColor],
+        source_mode: str = "auto",
     ) -> Generation:
         generation = Generation(id=uuid4().hex, status="processing")
         self._items[generation.id] = generation
 
         try:
-            generation.result = self._generate(image_bytes, width_cells, height_cells, palette)
+            generation.result = self._generate(image_bytes, width_cells, height_cells, palette, source_mode)
             generation.status = "completed"
         except (PaletteEmptyError, PixelArtProviderError) as exc:
             generation.status = "failed"
@@ -55,8 +56,9 @@ class GenerationStore:
         width_cells: int,
         height_cells: int,
         palette: list[PaletteColor],
+        source_mode: str,
     ) -> PatternResult:
-        pixel_matrix = self._provider.convert(image_bytes, width_cells, height_cells)
+        pixel_matrix = self._provider.convert(image_bytes, width_cells, height_cells, source_mode)
         usage_counter: Counter[str] = Counter()
         usage_colors: dict[str, PaletteColor] = {}
         rows: list[list[PixelCell | BeadCell]] = []

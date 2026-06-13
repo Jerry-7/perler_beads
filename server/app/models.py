@@ -18,6 +18,17 @@ class PaletteResponse(BaseModel):
     colors: list[PaletteColor]
 
 
+class PatternSizeRecommendation(BaseModel):
+    widthCells: int
+    heightCells: int
+    sourceWidth: int
+    sourceHeight: int
+    detectedBlockWidth: int | None = None
+    detectedBlockHeight: int | None = None
+    confidence: float = 0
+    reason: str
+
+
 class PixelCell(BaseModel):
     x: int
     y: int

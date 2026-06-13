@@ -13,5 +13,11 @@ class PixelArtCell:
 
 
 class PixelArtProvider(Protocol):
-    def convert(self, image_bytes: bytes, width_cells: int, height_cells: int) -> list[list[PixelArtCell]]:
+    def convert(
+        self,
+        image_bytes: bytes,
+        width_cells: int,
+        height_cells: int,
+        source_mode: str = "auto",
+    ) -> list[list[PixelArtCell]]:
         """Convert image bytes into a fixed-size pixel-art matrix."""
