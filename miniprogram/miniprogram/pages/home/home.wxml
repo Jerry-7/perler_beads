@@ -1,0 +1,66 @@
+<view class="home-page">
+  <view class="top-bar">
+    <view class="search-box">搜索图纸、作者、宝藏作品...</view>
+    <view class="capsule-space"></view>
+  </view>
+
+  <view class="hero-card">
+    <view class="hero-copy">
+      <text class="hero-title">📷 照片一键变拼豆图纸</text>
+      <text class="hero-subtitle">AI转换  </text>
+    </view>
+    <button class="hero-button" bindtap="startMaking">开始制作 ➔</button>
+  </view>
+
+  <view wx:if="{{actions.length}}" class="action-grid">
+    <view wx:for="{{actions}}" wx:key="label" class="action-item">
+      <view class="action-icon">{{item.icon}}</view>
+      <text class="action-label">{{item.label}}</text>
+    </view>
+  </view>
+
+  <view class="section-header">👑 周度创作者榜</view>
+  <scroll-view class="creator-scroll" scroll-x enable-flex>
+    <view class="creator-track">
+      <view wx:for="{{weeklyCreators}}" wx:key="name" class="creator-card">
+        <view class="creator-avatar">{{item.avatar}}</view>
+        <text class="creator-name">{{item.name}}</text>
+        <view class="creator-preview">
+          <view wx:for="{{item.previewColors}}" wx:for-item="color" wx:key="*this" class="preview-dot" style="background: {{color}};"></view>
+        </view>
+      </view>
+    </view>
+  </scroll-view>
+
+  <scroll-view class="tab-scroll" scroll-x enable-flex>
+    <view class="tab-track">
+      <view
+        wx:for="{{tabs}}"
+        wx:key="label"
+        data-index="{{index}}"
+        class="community-tab {{activeTabIndex === index ? 'active' : ''}}"
+        bindtap="switchTab"
+      >
+        {{item.label}}
+      </view>
+    </view>
+  </scroll-view>
+
+  <view class="waterfall">
+    <view wx:for="{{waterfallColumns}}" wx:for-item="column" wx:for-index="columnIndex" wx:key="columnIndex" class="waterfall-column">
+      <view wx:for="{{column}}" wx:for-item="work" wx:key="id" class="work-card">
+        <view class="work-image {{work.imageClass}}" style="height: {{work.imageHeight}}rpx;">
+          <text wx:if="{{work.hasPattern}}" class="pattern-tag">附图纸</text>
+        </view>
+        <text class="work-title">{{work.title}}</text>
+        <view class="work-footer">
+          <view class="author">
+            <view class="author-avatar">{{work.avatar}}</view>
+            <text class="author-name">{{work.author}}</text>
+          </view>
+          <view class="likes">♡ {{work.likes}}</view>
+        </view>
+      </view>
+    </view>
+  </view>
+</view>

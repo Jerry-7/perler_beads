@@ -1,6 +1,8 @@
 {
   "pages": [
-    "pages/index/index"
+    "pages/home/home",
+    "pages/index/index",
+    "pages/gallery/gallery"
   ],
   "window": {
     "navigationBarTitleText": "拼豆图纸",

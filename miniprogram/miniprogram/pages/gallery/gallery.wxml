@@ -1,0 +1,7 @@
+<view class="gallery-page">
+  <view class="empty-state">
+    <text class="title">作品集</text>
+    <text class="description">生成并保存的拼豆图纸会在这里集中查看。</text>
+    <button class="primary" bindtap="startMaking">开始制作</button>
+  </view>
+</view>
