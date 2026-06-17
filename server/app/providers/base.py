@@ -19,5 +19,11 @@ class PixelArtProvider(Protocol):
         width_cells: int,
         height_cells: int,
         source_mode: str = "auto",
+        ai_detail: str = "balanced",
+        ai_style: str = "faithful",
+        ai_effect_3d: str = "balanced",
+        ai_shading: str = "step",
+        ai_max_colors: int = 16,
+        sampling_mode: str = "dominant",
     ) -> list[list[PixelArtCell]]:
         """Convert image bytes into a fixed-size pixel-art matrix."""

@@ -72,3 +72,13 @@ class GenerationResponse(BaseModel):
 class GenerationStatusResponse(GenerationResponse):
     error: str | None = None
     result: PatternResult | None = None
+
+
+class AiImageResponse(BaseModel):
+    aiImageId: str
+    status: Literal["pending", "processing", "completed", "failed"]
+    imageUrl: str | None = None
+
+
+class AiImageStatusResponse(AiImageResponse):
+    error: str | None = None
