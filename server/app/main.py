@@ -1,17 +1,23 @@
+import logging
+
 from fastapi import FastAPI, File, Form, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.models import AiImageResponse, AiImageStatusResponse, GenerationResponse, GenerationStatusResponse, PaletteResponse, PatternSizeRecommendation
+from app.models import AiImageResponse, AiImageStatusResponse, GenerationResponse, GenerationStatusResponse, PaletteResponse, PatternDebugAnalysis, PatternSizeRecommendation
 from app.palette import PALETTE_VERSION, get_enabled_palette, get_palette
-from app.services.ai_images import AiImageError, ai_image_store
+from app.services.ai_images import ai_image_store
 from app.services.color_simplification import ColorSimplificationProfile
 from app.services.generation import GenerationError, generation_store
+from app.services.pattern_debug import PatternDebugError, analyze_pattern_mapping
 from app.services.size_recommendation import SizeRecommendationError, recommend_pattern_size_from_image
 
 AI_STYLE_OPTIONS = {"faithful", "iconic", "crafted", "dramatic"}
 AI_EFFECT_3D_OPTIONS = {"none", "subtle", "balanced", "strong"}
 AI_SHADING_OPTIONS = {"flat", "step", "dithered"}
-SAMPLING_MODE_OPTIONS = {"dominant", "detail", "smooth", "nearest"}
+SAMPLING_MODE_OPTIONS = {"raw", "edge", "dominant", "detail", "smooth", "nearest", "center-shrink"}
+LOGGER = logging.getLogger(__name__)
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
 
 app = FastAPI(title="Perler Beads Pattern Generator", version="0.1.0")
 
@@ -25,8 +31,8 @@ app.add_middleware(
 
 
 @app.get("/api/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+def health() -> dict[str, object]:
+    return {"status": "ok", "samplingModes": sorted(SAMPLING_MODE_OPTIONS)}
 
 
 @app.get("/api/palette", response_model=PaletteResponse)
@@ -57,7 +63,7 @@ def validate_generation_controls(width_cells: int, height_cells: int, source_mod
     if source_mode not in {"auto", "pixel-art", "resample"}:
         raise HTTPException(status_code=400, detail="sourceMode must be auto, pixel-art, or resample")
     if sampling_mode not in SAMPLING_MODE_OPTIONS:
-        raise HTTPException(status_code=400, detail="samplingMode must be dominant, detail, smooth, or nearest")
+        raise HTTPException(status_code=400, detail="samplingMode must be raw, edge, dominant, detail, smooth, nearest, or center-shrink")
 
 
 def validate_ai_controls(ai_detail: str, ai_style: str, ai_effect_3d: str, ai_shading: str, ai_max_colors: int) -> None:
@@ -79,7 +85,7 @@ def validate_max_colors(ai_max_colors: int) -> None:
 
 
 async def read_uploaded_image(image: UploadFile) -> bytes:
-    if not image.content_type or not image.content_type.startswith("image/"):
+    if image.content_type and not image.content_type.startswith("image/") and image.content_type != "application/octet-stream":
         raise HTTPException(status_code=400, detail="Uploaded file must be an image")
     image_bytes = await image.read()
     if not image_bytes:
@@ -145,6 +151,20 @@ async def create_generation(
     return GenerationResponse(generationId=generation.id, status=generation.status)
 
 
+@app.post("/api/pattern-debug/analyze", response_model=PatternDebugAnalysis)
+async def analyze_pattern_debug(
+    image: UploadFile = File(...),
+    widthCells: int = Form(...),
+    heightCells: int = Form(...),
+) -> PatternDebugAnalysis:
+    validate_generation_controls(widthCells, heightCells, "resample", "nearest")
+    image_bytes = await read_uploaded_image(image)
+    try:
+        return analyze_pattern_mapping(image_bytes, widthCells, heightCells)
+    except PatternDebugError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.post("/api/ai-images", response_model=AiImageResponse)
 async def create_ai_image(
     image: UploadFile = File(...),
@@ -156,22 +176,30 @@ async def create_ai_image(
     aiShading: str = Form("step"),
     aiMaxColors: int = Form(16),
 ) -> AiImageResponse:
+    LOGGER.info(
+        "ai_image endpoint_received width_cells=%s height_cells=%s ai_detail=%s ai_style=%s ai_effect_3d=%s ai_shading=%s ai_max_colors=%s",
+        widthCells,
+        heightCells,
+        aiDetail,
+        aiStyle,
+        aiEffect3d,
+        aiShading,
+        aiMaxColors,
+    )
     validate_generation_controls(widthCells, heightCells, "resample")
     validate_ai_controls(aiDetail, aiStyle, aiEffect3d, aiShading, aiMaxColors)
     image_bytes = await read_uploaded_image(image)
-    try:
-        ai_image = ai_image_store.create(
-            image_bytes=image_bytes,
-            width_cells=widthCells,
-            height_cells=heightCells,
-            ai_detail=aiDetail,
-            ai_style=aiStyle,
-            ai_effect_3d=aiEffect3d,
-            ai_shading=aiShading,
-            ai_max_colors=aiMaxColors,
-        )
-    except AiImageError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    ai_image = ai_image_store.create(
+        image_bytes=image_bytes,
+        width_cells=widthCells,
+        height_cells=heightCells,
+        ai_detail=aiDetail,
+        ai_style=aiStyle,
+        ai_effect_3d=aiEffect3d,
+        ai_shading=aiShading,
+        ai_max_colors=aiMaxColors,
+    )
+    LOGGER.info("ai_image endpoint_returning id=%s status=%s", ai_image.id, ai_image.status)
 
     return AiImageResponse(
         aiImageId=ai_image.id,

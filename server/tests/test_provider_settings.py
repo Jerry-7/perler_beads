@@ -26,6 +26,21 @@ def test_create_pixel_art_provider_uses_ai_provider_when_configured() -> None:
     assert isinstance(provider, AiPixelArtProvider)
 
 
+def test_create_pixel_art_provider_passes_proxy_trust_setting() -> None:
+    settings = AiImageSettings(
+        pixel_art_provider="ai",
+        ai_image_api_url="https://example.test/v1/images/edits",
+        ai_image_api_key="test-key",
+        ai_image_model="pixel-model",
+        ai_image_trust_env=True,
+    )
+
+    provider = create_pixel_art_provider(settings)
+
+    assert isinstance(provider, AiPixelArtProvider)
+    assert provider._config.trust_env is True
+
+
 def test_create_pixel_art_provider_requires_ai_configuration() -> None:
     settings = AiImageSettings(pixel_art_provider="ai")
 
@@ -43,6 +58,7 @@ def test_ai_settings_default_to_packyapi_image_edits(monkeypatch: pytest.MonkeyP
     monkeypatch.delenv("AI_IMAGE_OUTPUT_COMPRESSION", raising=False)
     monkeypatch.delenv("AI_IMAGE_MODERATION", raising=False)
     monkeypatch.delenv("AI_IMAGE_RESPONSE_FORMAT", raising=False)
+    monkeypatch.delenv("AI_IMAGE_TRUST_ENV", raising=False)
 
     settings = load_settings()
 
@@ -55,6 +71,15 @@ def test_ai_settings_default_to_packyapi_image_edits(monkeypatch: pytest.MonkeyP
     assert settings.ai_image_output_format is None
     assert settings.ai_image_output_compression is None
     assert settings.ai_image_moderation is None
+    assert settings.ai_image_trust_env is False
+
+
+def test_ai_settings_can_enable_environment_proxy_trust(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AI_IMAGE_TRUST_ENV", "true")
+
+    settings = load_settings()
+
+    assert settings.ai_image_trust_env is True
 
 
 def test_ai_settings_read_optional_image_edit_fields(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1,7 +1,7 @@
 from io import BytesIO
 
 from PIL import Image
-from app.providers.mock_pixel_art import MockPixelArtProvider
+from app.providers.mock_pixel_art import MockPixelArtProvider, encode_rows_as_rle
 
 from app.models import PaletteColor
 from app.palette import get_enabled_palette
@@ -54,9 +54,28 @@ def make_scaled_boundary_image() -> bytes:
     return buffer.getvalue()
 
 
+def make_thin_boundary_image() -> bytes:
+    image = Image.new("RGB", (18, 6), (240, 240, 240))
+    for y in range(6):
+        image.putpixel((8, y), (10, 10, 10))
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
 def make_single_pixel_noise_image() -> bytes:
     image = Image.new("RGB", (8, 8), (120, 120, 120))
     image.putpixel((0, 0), (255, 255, 255))
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def make_center_shrink_image() -> bytes:
+    image = Image.new("RGB", (10, 10), (0, 0, 255))
+    for y in range(3, 7):
+        for x in range(3, 7):
+            image.putpixel((x, y), (255, 0, 0))
     buffer = BytesIO()
     image.save(buffer, format="PNG")
     return buffer.getvalue()
@@ -83,6 +102,21 @@ def test_original_grid_pipeline_preserves_scaled_boundary() -> None:
         width_cells=3,
         height_cells=2,
         source_mode="resample",
+    )
+
+    boundary_column = [cells[0][1].rgb, cells[1][1].rgb]
+    assert all(rgb is not None and rgb[0] < 80 for rgb in boundary_column)
+
+
+def test_edge_sampling_preserves_thin_boundaries_when_downscaling() -> None:
+    provider = MockPixelArtProvider()
+
+    cells = provider.convert(
+        image_bytes=make_thin_boundary_image(),
+        width_cells=3,
+        height_cells=2,
+        source_mode="resample",
+        sampling_mode="edge",
     )
 
     boundary_column = [cells[0][1].rgb, cells[1][1].rgb]
@@ -130,21 +164,76 @@ def test_resample_keeps_adjacent_regions_separate() -> None:
     assert [cell.rgb for cell in cells[0]] == [(255, 0, 0), (0, 0, 255)]
 
 
+def test_raw_mapping_uses_region_mode_instead_of_center_pixel() -> None:
+    image = Image.new("RGB", (4, 4), (255, 0, 0))
+    image.putpixel((2, 2), (0, 0, 255))
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    provider = MockPixelArtProvider()
+
+    cells = provider.convert(
+        image_bytes=buffer.getvalue(),
+        width_cells=1,
+        height_cells=1,
+        source_mode="resample",
+        sampling_mode="nearest",
+    )
+
+    assert cells[0][0].rgb == (255, 0, 0)
+
+
+def test_raw_mapping_preserves_dark_outline_when_threshold_is_met() -> None:
+    image = Image.new("RGB", (4, 4), (240, 240, 240))
+    for x, y in [(0, 0), (1, 0), (2, 0), (3, 0), (0, 1)]:
+        image.putpixel((x, y), (10, 10, 10))
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    provider = MockPixelArtProvider()
+
+    cells = provider.convert(
+        image_bytes=buffer.getvalue(),
+        width_cells=1,
+        height_cells=1,
+        source_mode="resample",
+        sampling_mode="nearest",
+    )
+
+    assert cells[0][0].rgb == (10, 10, 10)
+
+
 def test_original_grid_pipeline_uses_consistent_result_for_legacy_modes() -> None:
     provider = MockPixelArtProvider()
 
-    results = []
-    for sampling_mode in ["dominant", "detail", "smooth", "nearest"]:
-        cells = provider.convert(
-            image_bytes=make_scaled_boundary_image(),
-            width_cells=3,
-            height_cells=2,
-            source_mode="resample",
-            sampling_mode=sampling_mode,
-        )
-        results.append([[cell.rgb for cell in row] for row in cells])
+    smooth_cells = provider.convert(
+        image_bytes=make_edge_image(),
+        width_cells=2,
+        height_cells=2,
+        source_mode="resample",
+        sampling_mode="smooth",
+    )
+    edge_cells = provider.convert(
+        image_bytes=make_edge_image(),
+        width_cells=2,
+        height_cells=2,
+        source_mode="resample",
+        sampling_mode="edge",
+    )
 
-    assert results[1:] == [results[0], results[0], results[0]]
+    assert [[cell.rgb for cell in row] for row in smooth_cells] != [[cell.rgb for cell in row] for row in edge_cells]
+
+
+def test_center_shrink_sampling_ignores_block_edges() -> None:
+    provider = MockPixelArtProvider()
+
+    cells = provider.convert(
+        image_bytes=make_center_shrink_image(),
+        width_cells=1,
+        height_cells=1,
+        source_mode="resample",
+        sampling_mode="center-shrink",
+    )
+
+    assert cells[0][0].rgb == (255, 0, 0)
 
 
 def test_generation_marks_letterbox_cells_empty() -> None:
@@ -205,6 +294,48 @@ def test_resample_mode_fills_requested_dimensions_without_letterbox() -> None:
 
     assert empty_count == 0
     assert usage_count == 100
+
+
+def test_raw_sampling_returns_source_colors_without_palette_matching() -> None:
+    store = GenerationStore()
+
+    generation = store.create(
+        image_bytes=make_image(1, 1, (123, 45, 67)),
+        width_cells=1,
+        height_cells=1,
+        palette=[PaletteColor(code="A", name="A", rgb=(0, 0, 0))],
+        source_mode="resample",
+        sampling_mode="raw",
+        color_complexity=ColorSimplificationProfile.ORIGINAL,
+        max_colors=4,
+    )
+
+    assert generation.result is not None
+    cell = generation.result.cells[0][0]
+    assert cell.sourceRgb == (123, 45, 67)
+    assert not hasattr(cell, "beadCode")
+    assert generation.result.usage == []
+
+
+def test_nearest_sampling_returns_source_colors_without_palette_matching() -> None:
+    store = GenerationStore()
+
+    generation = store.create(
+        image_bytes=make_image(1, 1, (123, 45, 67)),
+        width_cells=1,
+        height_cells=1,
+        palette=[PaletteColor(code="A", name="A", rgb=(0, 0, 0))],
+        source_mode="resample",
+        sampling_mode="nearest",
+        color_complexity=ColorSimplificationProfile.ORIGINAL,
+        max_colors=4,
+    )
+
+    assert generation.result is not None
+    cell = generation.result.cells[0][0]
+    assert cell.sourceRgb == (123, 45, 67)
+    assert not hasattr(cell, "beadCode")
+    assert generation.result.usage == []
 
 
 def test_generation_simplifies_low_usage_similar_bead_colors() -> None:
@@ -384,3 +515,37 @@ def test_generation_limits_usage_to_max_colors() -> None:
 
     assert generation.result is not None
     assert len(generation.result.usage) <= 2
+
+
+def test_center_shrink_generation_quantizes_before_palette_mapping() -> None:
+    image = Image.new("RGB", (4, 1))
+    for x, rgb in enumerate([(250, 10, 10), (230, 20, 20), (10, 10, 250), (20, 20, 230)]):
+        image.putpixel((x, 0), rgb)
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+
+    store = GenerationStore()
+    generation = store.create(
+        image_bytes=buffer.getvalue(),
+        width_cells=4,
+        height_cells=1,
+        palette=[
+            PaletteColor(code="RED", name="Red", rgb=(255, 0, 0)),
+            PaletteColor(code="BLUE", name="Blue", rgb=(0, 0, 255)),
+        ],
+        source_mode="resample",
+        sampling_mode="center-shrink",
+        color_complexity=ColorSimplificationProfile.ORIGINAL,
+        max_colors=2,
+    )
+
+    assert generation.result is not None
+    assert [item.beadCode for item in generation.result.usage] == ["BLUE", "RED"]
+    assert [item.count for item in generation.result.usage] == [2, 2]
+
+
+def test_encode_rows_as_rle_compresses_horizontal_runs() -> None:
+    assert encode_rows_as_rle([["S01", "S01", "S01", "S02", "S02"], ["S03"]]) == [
+        "S01:3,S02:2",
+        "S03:1",
+    ]

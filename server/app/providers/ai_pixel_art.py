@@ -2,6 +2,7 @@ import logging
 import re
 from dataclasses import dataclass
 from io import BytesIO
+from time import perf_counter
 from typing import Any
 
 import httpx
@@ -14,6 +15,7 @@ from app.providers.mock_pixel_art import MockPixelArtProvider, PixelArtProviderE
 IMAGE_URL_PATTERN = re.compile(r"https?://[^\s\])\"']+", re.IGNORECASE)
 LOGGER = logging.getLogger(__name__)
 MAX_LOG_RESPONSE_CHARS = 800
+IMAGE_EDIT_REQUEST_ATTEMPTS = 3
 NEGATIVE_PROMPT = (
     "photorealistic, smooth gradients, anti-aliasing, blurry edges, floating pixels, isolated pixels, "
     "stiff, dull expression, generic subject, extra details, noise, flat"
@@ -51,6 +53,7 @@ class AiPixelArtProviderConfig:
     output_format: str | None = None
     output_compression: int | None = None
     moderation: str | None = None
+    trust_env: bool = False
 
 
 class AiPixelArtProvider:
@@ -159,19 +162,40 @@ class AiPixelArtProvider:
         )
         data = image_edit_form_data(self._config, prompt)
         image_png = encode_png(image_bytes)
-        with httpx.Client(timeout=self._config.timeout_seconds, transport=self._transport) as client:
+        with httpx.Client(timeout=self._config.timeout_seconds, transport=self._transport, trust_env=self._config.trust_env) as client:
+            response: httpx.Response | None = None
             try:
-                response = client.post(
-                    image_edits_url(self._config.api_url),
-                    headers={"Authorization": f"Bearer {self._config.api_key}", "Accept": "application/json"},
-                    data=data,
-                    files={"image": ("source.png", image_png, "image/png")},
-                )
+                for attempt in range(1, IMAGE_EDIT_REQUEST_ATTEMPTS + 1):
+                    started_at = perf_counter()
+                    try:
+                        response = client.post(
+                            image_edits_url(self._config.api_url),
+                            headers={"Authorization": f"Bearer {self._config.api_key}", "Accept": "application/json"},
+                            data=data,
+                            files={"image": ("source.png", image_png, "image/png")},
+                        )
+                        LOGGER.info(
+                            "ai_image request_finished attempt=%s status_code=%s elapsed_ms=%s",
+                            attempt,
+                            response.status_code,
+                            round((perf_counter() - started_at) * 1000),
+                        )
+                        break
+                    except httpx.HTTPError as exc:
+                        LOGGER.warning(
+                            "ai_image request_attempt_failed attempt=%s max_attempts=%s elapsed_ms=%s error=%s",
+                            attempt,
+                            IMAGE_EDIT_REQUEST_ATTEMPTS,
+                            round((perf_counter() - started_at) * 1000),
+                            exc,
+                        )
+                        if attempt == IMAGE_EDIT_REQUEST_ATTEMPTS:
+                            raise
             except httpx.HTTPError as exc:
                 LOGGER.exception("ai_image request_error error=%s", exc)
                 raise PixelArtProviderError(f"AI image request failed: {exc}") from exc
 
-        LOGGER.info("ai_image request_finished status_code=%s", response.status_code)
+        assert response is not None
         if response.status_code >= 400:
             LOGGER.warning(
                 "ai_image request_failed_status status_code=%s response=%s",
@@ -190,14 +214,20 @@ class AiPixelArtProvider:
 
     def _download_image(self, image_url: str) -> bytes:
         LOGGER.info("ai_image download_start url=%s", image_url)
-        with httpx.Client(timeout=self._config.timeout_seconds, transport=self._transport) as client:
+        started_at = perf_counter()
+        with httpx.Client(timeout=self._config.timeout_seconds, transport=self._transport, trust_env=self._config.trust_env) as client:
             try:
                 response = client.get(image_url)
             except httpx.HTTPError as exc:
                 LOGGER.exception("ai_image download_error error=%s", exc)
                 raise PixelArtProviderError(f"AI image download failed: {exc}") from exc
 
-        LOGGER.info("ai_image download_finished status_code=%s bytes=%s", response.status_code, len(response.content))
+        LOGGER.info(
+            "ai_image download_finished status_code=%s bytes=%s elapsed_ms=%s",
+            response.status_code,
+            len(response.content),
+            round((perf_counter() - started_at) * 1000),
+        )
         if response.status_code >= 400:
             LOGGER.warning("ai_image download_failed_status status_code=%s", response.status_code)
             raise PixelArtProviderError(f"AI image download failed with status {response.status_code}")

@@ -9,6 +9,7 @@ import app.main as main_module
 from app.main import app
 from app.providers.ai_pixel_art import AiPixelArtProvider, AiPixelArtProviderConfig
 from app.providers.base import PixelArtCell
+from app.services.ai_images import AiImageStore
 from app.services.generation import GenerationError
 from app.services.generation import GenerationStore
 
@@ -64,6 +65,22 @@ class FakeAiImageStore:
         )()
 
 
+class ImmediateFakeAiImageStore(FakeAiImageStore):
+    def create(self, **kwargs):
+        self.created = kwargs
+        return type(
+            "AiImage",
+            (),
+            {
+                "id": "ai-1",
+                "status": "processing",
+                "image_bytes": None,
+                "content_type": "image/png",
+                "error": None,
+            },
+        )()
+
+
 def test_create_and_get_generation() -> None:
     response = client.post(
         "/api/generations",
@@ -81,6 +98,13 @@ def test_create_and_get_generation() -> None:
     assert body["status"] == "completed"
     assert body["result"]["widthCells"] == 8
     assert body["result"]["heightCells"] == 8
+
+
+def test_health_reports_supported_sampling_modes() -> None:
+    response = client.get("/api/health")
+
+    assert response.status_code == 200
+    assert "center-shrink" in response.json()["samplingModes"]
 
 
 def test_create_ai_image_and_fetch_generated_image(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -122,6 +146,75 @@ def test_create_ai_image_and_fetch_generated_image(monkeypatch: pytest.MonkeyPat
     assert image_response.status_code == 200
     assert image_response.headers["content-type"] == "image/png"
     assert image_response.content == store.image_bytes
+
+
+def test_create_ai_image_returns_processing_before_background_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = ImmediateFakeAiImageStore()
+    monkeypatch.setattr(main_module, "ai_image_store", store)
+
+    response = client.post(
+        "/api/ai-images",
+        data={"widthCells": "8", "heightCells": "10"},
+        files={"image": ("test.png", make_image(), "image/png")},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "aiImageId": "ai-1",
+        "status": "processing",
+        "imageUrl": None,
+    }
+
+
+def test_ai_image_store_create_starts_background_task_without_waiting() -> None:
+    class RecordingProvider:
+        called = False
+
+        def generate_image(self, **kwargs):
+            self.called = True
+            return make_image()
+
+    task_runner_calls = []
+
+    def task_runner(run):
+        task_runner_calls.append(run)
+
+    provider = RecordingProvider()
+    store = AiImageStore(provider=provider, task_runner=task_runner)
+
+    item = store.create(
+        image_bytes=make_image(),
+        width_cells=8,
+        height_cells=8,
+    )
+
+    assert item.status == "processing"
+    assert item.image_bytes is None
+    assert provider.called is False
+    assert len(task_runner_calls) == 1
+
+    task_runner_calls[0]()
+
+    assert item.status == "completed"
+    assert item.image_bytes == make_image()
+
+
+def test_ai_image_store_marks_unexpected_background_error_as_failed() -> None:
+    class FailingProvider:
+        def generate_image(self, **kwargs):
+            raise RuntimeError("network exploded")
+
+    store = AiImageStore(provider=FailingProvider(), task_runner=lambda run: run())
+
+    item = store.create(
+        image_bytes=make_image(),
+        width_cells=8,
+        height_cells=8,
+    )
+
+    assert item.status == "failed"
+    assert item.image_bytes is None
+    assert item.error == "network exploded"
 
 
 def test_create_generation_can_use_existing_ai_image(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -242,6 +335,73 @@ def test_create_generation_resample_mode_fills_requested_dimensions() -> None:
 
     assert empty_count == 0
     assert usage_count == 100
+
+
+def test_create_generation_accepts_octet_stream_upload_with_image_bytes() -> None:
+    response = client.post(
+        "/api/generations",
+        data={"widthCells": "4", "heightCells": "4", "sourceMode": "resample", "samplingMode": "edge"},
+        files={"image": ("upload.tmp", make_image(), "application/octet-stream")},
+    )
+
+    assert response.status_code == 200
+
+
+def test_create_generation_accepts_raw_sampling_mode() -> None:
+    response = client.post(
+        "/api/generations",
+        data={"widthCells": "4", "heightCells": "4", "sourceMode": "resample", "samplingMode": "raw"},
+        files={"image": ("test.png", make_image(), "image/png")},
+    )
+
+    assert response.status_code == 200
+    generation_id = response.json()["generationId"]
+    result_response = client.get(f"/api/generations/{generation_id}")
+    body = result_response.json()
+
+    assert body["result"]["usage"] == []
+    assert "sourceRgb" in body["result"]["cells"][0][0]
+    assert "beadCode" not in body["result"]["cells"][0][0]
+
+
+def test_create_generation_accepts_center_shrink_sampling_mode() -> None:
+    response = client.post(
+        "/api/generations",
+        data={"widthCells": "4", "heightCells": "4", "sourceMode": "resample", "samplingMode": "center-shrink"},
+        files={"image": ("test.png", make_image(), "image/png")},
+    )
+
+    assert response.status_code == 200
+
+
+def test_pattern_debug_analyze_reports_detected_and_compressed_grids() -> None:
+    image = Image.new("RGB", (4, 4), (255, 0, 0))
+    for y in range(4):
+        for x in range(2, 4):
+            image.putpixel((x, y), (0, 0, 255))
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+
+    response = client.post(
+        "/api/pattern-debug/analyze",
+        data={"widthCells": "3", "heightCells": "2"},
+        files={"image": ("blocks.png", buffer.getvalue(), "image/png")},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["sourceWidth"] == 4
+    assert body["sourceHeight"] == 4
+    assert body["detectedBlockWidth"] == 2
+    assert body["detectedBlockHeight"] == 4
+    assert body["detectedGridWidth"] == 2
+    assert body["detectedGridHeight"] == 1
+    assert body["detectedPixelCount"] == 2
+    assert body["compressedGridWidth"] == 3
+    assert body["compressedGridHeight"] == 2
+    assert body["compressedPixelCount"] == 6
+    assert body["originalPreviewDataUrl"].startswith("data:image/png;base64,")
+    assert body["compressedPreviewDataUrl"].startswith("data:image/png;base64,")
 
 
 def test_create_generation_accepts_color_complexity() -> None:

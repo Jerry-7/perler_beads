@@ -1,5 +1,5 @@
 from io import BytesIO
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 from PIL import Image, ImageFilter, UnidentifiedImageError
 
@@ -11,6 +11,8 @@ class PixelArtProviderError(ValueError):
 
 
 ORIGINAL_GRID_MAX_SIDE = 768
+DARK_PIXEL_SUM_THRESHOLD = 150
+DARK_PIXEL_RATIO_THRESHOLD = 0.25
 
 
 class MockPixelArtProvider:
@@ -38,7 +40,8 @@ class MockPixelArtProvider:
             raise PixelArtProviderError("Uploaded image has invalid dimensions")
 
         if source_mode == "resample":
-            return original_grid_resample(original, width_cells, height_cells)
+            original_grid = make_original_color_grid(original)
+            return resample_by_mode(original_grid, width_cells, height_cells, sampling_mode)
 
         scale = min(width_cells / original.width, height_cells / original.height)
         scaled_width = max(1, min(width_cells, round(original.width * scale)))
@@ -69,14 +72,18 @@ def resample_by_mode(
     height_cells: int,
     sampling_mode: str,
 ) -> list[list[PixelArtCell]]:
+    if sampling_mode == "center-shrink":
+        return center_shrink_resample(image, width_cells, height_cells)
+    if sampling_mode == "raw":
+        return compressed_pixel_art_resample(image, width_cells, height_cells)
     if sampling_mode == "smooth":
         smoothed = image.filter(ImageFilter.MedianFilter(size=3))
         return region_resample(smoothed, width_cells, height_cells, average_region_color)
     if sampling_mode == "nearest":
-        return nearest_region_resample(image, width_cells, height_cells)
+        return compressed_pixel_art_resample(image, width_cells, height_cells)
     if sampling_mode == "detail":
         return region_resample(image, width_cells, height_cells, detail_region_color)
-    return dominant_region_resample(image, width_cells, height_cells)
+    return edge_preserving_region_resample(image, width_cells, height_cells)
 
 
 def original_grid_resample(image: Image.Image, width_cells: int, height_cells: int) -> list[list[PixelArtCell]]:
@@ -100,11 +107,15 @@ def scale_original_grid_to_cells(
     width_cells: int,
     height_cells: int,
 ) -> list[list[PixelArtCell]]:
-    return region_resample(image, width_cells, height_cells, original_grid_region_color)
+    return region_resample(image, width_cells, height_cells, edge_preserving_region_color)
 
 
 def dominant_region_resample(image: Image.Image, width_cells: int, height_cells: int) -> list[list[PixelArtCell]]:
     return region_resample(image, width_cells, height_cells, dominant_region_color)
+
+
+def edge_preserving_region_resample(image: Image.Image, width_cells: int, height_cells: int) -> list[list[PixelArtCell]]:
+    return region_resample(image, width_cells, height_cells, edge_preserving_region_color)
 
 
 def nearest_region_resample(image: Image.Image, width_cells: int, height_cells: int) -> list[list[PixelArtCell]]:
@@ -117,6 +128,14 @@ def nearest_region_resample(image: Image.Image, width_cells: int, height_cells: 
             row.append(PixelArtCell(x=x, y=y, rgb=image.getpixel((source_x, source_y))))
         matrix.append(row)
     return matrix
+
+
+def compressed_pixel_art_resample(image: Image.Image, width_cells: int, height_cells: int) -> list[list[PixelArtCell]]:
+    return region_resample(image, width_cells, height_cells, compressed_pixel_art_region_color)
+
+
+def center_shrink_resample(image: Image.Image, width_cells: int, height_cells: int) -> list[list[PixelArtCell]]:
+    return region_resample(image, width_cells, height_cells, center_shrink_region_color)
 
 
 def region_resample(
@@ -142,6 +161,33 @@ def region_resample(
     return matrix
 
 
+def compressed_pixel_art_region_color(image: Image.Image, left: int, top: int, right: int, bottom: int) -> tuple[int, int, int]:
+    pixels = [image.getpixel((x, y)) for y in range(top, bottom) for x in range(left, right)]
+    if not pixels:
+        return (0, 0, 0)
+
+    dark_pixels = [pixel for pixel in pixels if sum(pixel) < DARK_PIXEL_SUM_THRESHOLD]
+    if dark_pixels and len(dark_pixels) / len(pixels) > DARK_PIXEL_RATIO_THRESHOLD:
+        return min(dark_pixels, key=sum)
+
+    return Counter(pixels).most_common(1)[0][0]
+
+
+def center_shrink_region_color(image: Image.Image, left: int, top: int, right: int, bottom: int) -> tuple[int, int, int]:
+    width = right - left
+    height = bottom - top
+    inset_x = int(width * 0.3)
+    inset_y = int(height * 0.3)
+    core_left = min(right - 1, left + inset_x)
+    core_right = max(core_left + 1, right - inset_x)
+    core_top = min(bottom - 1, top + inset_y)
+    core_bottom = max(core_top + 1, bottom - inset_y)
+    pixels = [image.getpixel((x, y)) for y in range(core_top, core_bottom) for x in range(core_left, core_right)]
+    if not pixels:
+        return (0, 0, 0)
+    return Counter(pixels).most_common(1)[0][0]
+
+
 def dominant_region_color(image: Image.Image, left: int, top: int, right: int, bottom: int) -> tuple[int, int, int]:
     buckets: dict[tuple[int, int, int], list[tuple[int, int, int]]] = defaultdict(list)
     for y in range(top, bottom):
@@ -157,7 +203,7 @@ def dominant_region_color(image: Image.Image, left: int, top: int, right: int, b
     return average_color(dominant_pixels)
 
 
-def original_grid_region_color(image: Image.Image, left: int, top: int, right: int, bottom: int) -> tuple[int, int, int]:
+def edge_preserving_region_color(image: Image.Image, left: int, top: int, right: int, bottom: int) -> tuple[int, int, int]:
     buckets: dict[tuple[int, int, int], list[tuple[int, int, int]]] = defaultdict(list)
     for y in range(top, bottom):
         for x in range(left, right):
@@ -187,7 +233,7 @@ def structural_region_pixels(
         coverage = count / total_count
         if count > dominant_count:
             continue
-        if coverage < 0.12:
+        if coverage < 0.08:
             continue
         if color_distance_squared(average, dominant_average) < 70**2:
             continue
@@ -264,3 +310,25 @@ def quantize_rgb(rgb: tuple[int, int, int]) -> tuple[int, int, int]:
 def int_ceil(value: float) -> int:
     integer = int(value)
     return integer if value == integer else integer + 1
+
+
+def encode_rows_as_rle(rows: list[list[str]]) -> list[str]:
+    encoded_rows: list[str] = []
+    for row in rows:
+        if not row:
+            encoded_rows.append("")
+            continue
+
+        runs: list[str] = []
+        current = row[0]
+        count = 1
+        for code in row[1:]:
+            if code == current:
+                count += 1
+                continue
+            runs.append(f"{current}:{count}")
+            current = code
+            count = 1
+        runs.append(f"{current}:{count}")
+        encoded_rows.append(",".join(runs))
+    return encoded_rows

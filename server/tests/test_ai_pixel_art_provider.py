@@ -220,6 +220,47 @@ def test_ai_provider_rejects_failed_ai_response() -> None:
         provider.convert(make_image_bytes(), width_cells=1, height_cells=1)
 
 
+def test_ai_provider_retries_disconnected_image_edit_request() -> None:
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        if str(request.url) == "https://example.test/generated.png":
+            return httpx.Response(200, content=make_image_bytes((0, 255, 0)))
+        attempts += 1
+        if attempts == 1:
+            raise httpx.RemoteProtocolError("Server disconnected without sending a response.")
+        return httpx.Response(200, json={"data": [{"url": "https://example.test/generated.png"}]})
+
+    provider = make_provider(handler)
+
+    cells = provider.convert(make_image_bytes(), width_cells=1, height_cells=1)
+
+    assert attempts == 2
+    assert cells[0][0].rgb == (0, 255, 0)
+
+
+def test_ai_provider_disables_environment_proxy_trust_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured_trust_env: list[bool] = []
+    real_client = httpx.Client
+
+    def recording_client(*args, **kwargs):
+        captured_trust_env.append(kwargs.get("trust_env", True))
+        return real_client(*args, **kwargs)
+
+    monkeypatch.setattr(httpx, "Client", recording_client)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == "https://example.test/generated.png":
+            return httpx.Response(200, content=make_image_bytes((0, 255, 0)))
+        return httpx.Response(200, json={"data": [{"url": "https://example.test/generated.png"}]})
+
+    provider = make_provider(handler)
+    provider.convert(make_image_bytes(), width_cells=1, height_cells=1)
+
+    assert captured_trust_env == [False, False]
+
+
 def test_ai_provider_logs_failed_ai_response(caplog: pytest.LogCaptureFixture) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(500, json={"error": "upstream failed"})

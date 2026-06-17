@@ -29,6 +29,21 @@ class PatternSizeRecommendation(BaseModel):
     reason: str
 
 
+class PatternDebugAnalysis(BaseModel):
+    sourceWidth: int
+    sourceHeight: int
+    detectedBlockWidth: int | None = None
+    detectedBlockHeight: int | None = None
+    detectedGridWidth: int
+    detectedGridHeight: int
+    detectedPixelCount: int
+    compressedGridWidth: int
+    compressedGridHeight: int
+    compressedPixelCount: int
+    originalPreviewDataUrl: str
+    compressedPreviewDataUrl: str
+
+
 class PixelCell(BaseModel):
     x: int
     y: int
@@ -45,7 +60,13 @@ class BeadCell(BaseModel):
     distance: float
 
 
-PatternCell = PixelCell | BeadCell
+class RawColorCell(BaseModel):
+    x: int
+    y: int
+    sourceRgb: Rgb
+
+
+PatternCell = PixelCell | BeadCell | RawColorCell
 
 
 class BeadUsage(BaseModel):

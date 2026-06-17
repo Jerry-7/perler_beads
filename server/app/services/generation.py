@@ -5,9 +5,9 @@ from uuid import uuid4
 
 from app.color_matching import PaletteEmptyError, find_nearest_color
 from app.color_matching import rgb_distance
-from app.models import BeadCell, BeadUsage, PaletteColor, PatternResult, PixelCell
+from app.models import BeadCell, BeadUsage, PaletteColor, PatternResult, PixelCell, RawColorCell
 from app.palette import PALETTE_VERSION
-from app.providers.base import PixelArtProvider
+from app.providers.base import PixelArtCell, PixelArtProvider
 from app.providers.mock_pixel_art import MockPixelArtProvider, PixelArtProviderError
 from app.services.color_simplification import ColorSimplificationProfile, simplify_low_usage_similar_colors
 
@@ -83,6 +83,11 @@ class GenerationStore:
             source_mode=source_mode,
             sampling_mode=sampling_mode,
         )
+        if sampling_mode in {"raw", "nearest"}:
+            return self._generate_raw_color_result(pixel_matrix, width_cells, height_cells)
+        if sampling_mode == "center-shrink":
+            pixel_matrix = quantize_pixel_matrix(pixel_matrix, max_colors)
+
         rows: list[list[PixelCell | BeadCell]] = []
 
         for pixel_row in pixel_matrix:
@@ -135,6 +140,31 @@ class GenerationStore:
             generatedAt=datetime.now(UTC).isoformat(),
         )
 
+    def _generate_raw_color_result(
+        self,
+        pixel_matrix: list[list],
+        width_cells: int,
+        height_cells: int,
+    ) -> PatternResult:
+        rows: list[list[PixelCell | RawColorCell]] = []
+        for pixel_row in pixel_matrix:
+            row: list[PixelCell | RawColorCell] = []
+            for pixel in pixel_row:
+                if pixel.empty or pixel.rgb is None:
+                    row.append(PixelCell(x=pixel.x, y=pixel.y))
+                else:
+                    row.append(RawColorCell(x=pixel.x, y=pixel.y, sourceRgb=pixel.rgb))
+            rows.append(row)
+
+        return PatternResult(
+            widthCells=width_cells,
+            heightCells=height_cells,
+            paletteVersion="source-rgb",
+            cells=rows,
+            usage=[],
+            generatedAt=datetime.now(UTC).isoformat(),
+        )
+
     def _get_provider(self) -> PixelArtProvider:
         if self._provider is None:
             self._provider = MockPixelArtProvider()
@@ -181,3 +211,66 @@ def replace_with_nearest_kept_color(cell: BeadCell, kept_cells: list[BeadCell]) 
         beadRgb=target.beadRgb,
         distance=round(rgb_distance(cell.sourceRgb, target.beadRgb), 3),
     )
+
+
+def quantize_pixel_matrix(pixel_matrix: list[list[PixelArtCell]], max_colors: int) -> list[list[PixelArtCell]]:
+    colors = [cell.rgb for row in pixel_matrix for cell in row if not cell.empty and cell.rgb is not None]
+    unique_colors = sorted(set(colors))
+    cluster_count = min(max_colors, len(unique_colors))
+    if cluster_count <= 0 or len(unique_colors) <= cluster_count:
+        return pixel_matrix
+
+    centroids = kmeans_rgb(colors, cluster_count)
+    return [
+        [
+            PixelArtCell(
+                x=cell.x,
+                y=cell.y,
+                rgb=nearest_centroid(cell.rgb, centroids) if not cell.empty and cell.rgb is not None else None,
+                empty=cell.empty,
+            )
+            for cell in row
+        ]
+        for row in pixel_matrix
+    ]
+
+
+def kmeans_rgb(colors: list[tuple[int, int, int]], cluster_count: int, iterations: int = 12) -> list[tuple[int, int, int]]:
+    unique_colors = sorted(set(colors), key=lambda rgb: (luminance(rgb), rgb))
+    if cluster_count >= len(unique_colors):
+        return unique_colors
+
+    if cluster_count == 1:
+        return [average_rgb(colors)]
+
+    step = (len(unique_colors) - 1) / (cluster_count - 1)
+    centroids = [unique_colors[round(index * step)] for index in range(cluster_count)]
+
+    for _ in range(iterations):
+        buckets: list[list[tuple[int, int, int]]] = [[] for _ in centroids]
+        for color in colors:
+            bucket_index = min(range(len(centroids)), key=lambda index: rgb_distance(color, centroids[index]))
+            buckets[bucket_index].append(color)
+
+        next_centroids = [average_rgb(bucket) if bucket else centroids[index] for index, bucket in enumerate(buckets)]
+        if next_centroids == centroids:
+            break
+        centroids = next_centroids
+
+    return centroids
+
+
+def nearest_centroid(rgb: tuple[int, int, int], centroids: list[tuple[int, int, int]]) -> tuple[int, int, int]:
+    return min(centroids, key=lambda centroid: rgb_distance(rgb, centroid))
+
+
+def average_rgb(colors: list[tuple[int, int, int]]) -> tuple[int, int, int]:
+    return (
+        round(sum(color[0] for color in colors) / len(colors)),
+        round(sum(color[1] for color in colors) / len(colors)),
+        round(sum(color[2] for color in colors) / len(colors)),
+    )
+
+
+def luminance(rgb: tuple[int, int, int]) -> float:
+    return 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]

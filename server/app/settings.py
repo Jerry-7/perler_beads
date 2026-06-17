@@ -36,6 +36,7 @@ class AiImageSettings:
     ai_image_output_format: str | None = None
     ai_image_output_compression: int | None = None
     ai_image_moderation: str | None = None
+    ai_image_trust_env: bool = False
 
 
 def load_settings() -> AiImageSettings:
@@ -53,6 +54,7 @@ def load_settings() -> AiImageSettings:
         ai_image_output_format=optional_env("AI_IMAGE_OUTPUT_FORMAT"),
         ai_image_output_compression=optional_int_env("AI_IMAGE_OUTPUT_COMPRESSION"),
         ai_image_moderation=optional_env("AI_IMAGE_MODERATION"),
+        ai_image_trust_env=bool_env("AI_IMAGE_TRUST_ENV", False),
     )
 
 
@@ -84,6 +86,7 @@ def create_ai_pixel_art_provider(settings: AiImageSettings | None = None) -> AiP
             output_format=settings.ai_image_output_format,
             output_compression=settings.ai_image_output_compression,
             moderation=settings.ai_image_moderation,
+            trust_env=settings.ai_image_trust_env,
         )
     )
 
@@ -98,3 +101,10 @@ def optional_int_env(name: str) -> int | None:
     if value is None:
         return None
     return int(value)
+
+
+def bool_env(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
