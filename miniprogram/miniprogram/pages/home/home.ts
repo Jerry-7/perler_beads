@@ -7,7 +7,9 @@ Page({
     tabs: COMMUNITY_TABS,
     actions: HOME_ACTIONS,
     weeklyCreators: WEEKLY_CREATORS,
-    waterfallColumns: WATERFALL_COLUMNS
+    waterfallColumns: WATERFALL_COLUMNS,
+    hasWeeklyCreators: WEEKLY_CREATORS.length > 0,
+    hasWaterfallItems: WATERFALL_COLUMNS.some((column) => column.length > 0)
   },
 
   startMaking() {

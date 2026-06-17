@@ -20,7 +20,7 @@
   </view>
 
   <view class="section-header">👑 周度创作者榜</view>
-  <scroll-view class="creator-scroll" scroll-x enable-flex>
+  <scroll-view wx:if="{{hasWeeklyCreators}}" class="creator-scroll" scroll-x enable-flex>
     <view class="creator-track">
       <view wx:for="{{weeklyCreators}}" wx:key="name" class="creator-card">
         <view class="creator-avatar">{{item.avatar}}</view>
@@ -31,6 +31,7 @@
       </view>
     </view>
   </scroll-view>
+  <view wx:else class="empty-state">暂无真实创作者数据</view>
 
   <scroll-view class="tab-scroll" scroll-x enable-flex>
     <view class="tab-track">
@@ -46,7 +47,7 @@
     </view>
   </scroll-view>
 
-  <view class="waterfall">
+  <view wx:if="{{hasWaterfallItems}}" class="waterfall">
     <view wx:for="{{waterfallColumns}}" wx:for-item="column" wx:for-index="columnIndex" wx:key="columnIndex" class="waterfall-column">
       <view wx:for="{{column}}" wx:for-item="work" wx:key="id" class="work-card">
         <view class="work-image {{work.imageClass}}" style="height: {{work.imageHeight}}rpx;">
@@ -63,4 +64,5 @@
       </view>
     </view>
   </view>
+  <view wx:else class="empty-state">暂无真实作品数据</view>
 </view>

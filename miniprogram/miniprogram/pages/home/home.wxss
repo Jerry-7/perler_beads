@@ -117,6 +117,17 @@
   font-weight: 800;
 }
 
+.empty-state {
+  padding: 32rpx 24rpx;
+  border: 4rpx dashed #333333;
+  border-radius: 8rpx;
+  color: #5f574d;
+  background: #fff8d6;
+  font-size: 26rpx;
+  font-weight: 700;
+  text-align: center;
+}
+
 .creator-scroll,
 .tab-scroll {
   width: 100%;
