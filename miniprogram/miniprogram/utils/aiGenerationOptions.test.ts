@@ -6,7 +6,8 @@ import {
   DEFAULT_AI_MAX_COLORS,
   DEFAULT_AI_SHADING_INDEX,
   DEFAULT_AI_STYLE_INDEX,
-  normalizeAiMaxColors
+  normalizeAiMaxColors,
+  normalizeAiMaxColorsInput
 } from "./aiGenerationOptions";
 
 function assertEqual(actual: unknown, expected: unknown, message: string): void {
@@ -45,4 +46,11 @@ test("max colors are clamped to the backend range", () => {
   assertEqual(normalizeAiMaxColors(65), 64, "max clamp");
   assertEqual(normalizeAiMaxColors(24), 24, "valid value");
   assertEqual(normalizeAiMaxColors(Number.NaN), DEFAULT_AI_MAX_COLORS, "invalid value");
+});
+
+test("max colors input can be temporarily empty while editing", () => {
+  assertEqual(normalizeAiMaxColorsInput(""), "", "empty input");
+  assertEqual(normalizeAiMaxColorsInput("3"), 3, "below min can still be edited");
+  assertEqual(normalizeAiMaxColorsInput("32"), 32, "valid input");
+  assertEqual(normalizeAiMaxColorsInput("65"), 64, "max clamp");
 });

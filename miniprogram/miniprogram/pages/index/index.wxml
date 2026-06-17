@@ -28,6 +28,18 @@
 
   <view class="panel control-panel">
     <view class="panel-heading">
+      <text class="panel-title">公共参数</text>
+      <text class="panel-badge">最多 {{aiMaxColors || 16}} 色</text>
+    </view>
+
+    <label class="field">
+      <text class="field-label">最大颜色数（4-64）</text>
+      <input type="number" value="{{aiMaxColors}}" bindinput="onAiMaxColorsInput" />
+    </label>
+  </view>
+
+  <view class="panel control-panel">
+    <view class="panel-heading">
       <text class="panel-title">图纸参数</text>
       <text class="panel-badge">{{widthCells}} x {{heightCells}}</text>
     </view>
@@ -73,14 +85,16 @@
       </label>
     </view>
 
-    <label class="field">
-      <text class="field-label">最大颜色数（4-64）</text>
-      <input type="number" value="{{aiMaxColors}}" bindinput="onAiMaxColorsInput" />
-    </label>
-
     <button class="generate-button" loading="{{isGeneratingAiImage}}" disabled="{{!canGenerate || isGeneratingAiImage}}" bindtap="generateAiImage">
       {{aiImageId ? "重新生成 AI 图" : "生成 AI 预览图"}}
     </button>
+
+    <view wx:if="{{isGeneratingAiImage || aiImageProgress}}" class="progress-block">
+      <view class="progress-track">
+        <view class="progress-fill" style="width: {{aiImageProgress}}%;"></view>
+      </view>
+      <text class="progress-text">{{aiImageProgressText}} {{aiImageProgress}}%</text>
+    </view>
   </view>
 
   <view wx:if="{{aiImagePath}}" class="panel upload-panel">
@@ -91,12 +105,34 @@
     <view class="preview has-image">
       <image class="preview-image" src="{{aiImagePath}}" mode="aspectFit" />
     </view>
+    <button class="secondary-button panel-action-button" bindtap="saveAiImageToAlbum">保存到相册</button>
   </view>
 
   <view class="panel control-panel">
     <view class="panel-heading">
       <text class="panel-title">图纸调整</text>
-      <text class="panel-badge">{{aiImageId ? "已就绪" : "先生成 AI 图"}}</text>
+      <text class="panel-badge">{{patternSource === "ai" ? (aiImageId ? "AI 图已就绪" : "先生成 AI 图") : (imagePath ? "原图已就绪" : "先选择图片")}}</text>
+    </view>
+    <view class="hint-strip">图纸最多保留 {{aiMaxColors || 16}} 种颜色，会影响最终拼豆色号数量。</view>
+
+    <view class="field">
+      <text class="field-label">图纸来源</text>
+      <view class="source-switch">
+        <button
+          class="source-option {{patternSource === 'original' ? 'active' : ''}}"
+          size="mini"
+          bindtap="selectOriginalPatternSource"
+        >
+          原上传图
+        </button>
+        <button
+          class="source-option {{patternSource === 'ai' ? 'active' : ''}}"
+          size="mini"
+          bindtap="selectAiPatternSource"
+        >
+          AI 预览图
+        </button>
+      </view>
     </view>
 
     <label class="field">
@@ -140,9 +176,57 @@
       </picker>
     </label>
 
-    <button class="generate-button" loading="{{isGenerating}}" disabled="{{!aiImageId || isGenerating}}" bindtap="generatePattern">
+    <button
+      class="generate-button"
+      loading="{{isGenerating}}"
+      disabled="{{isGenerating || (patternSource === 'ai' ? !aiImageId : !imagePath)}}"
+      bindtap="generatePattern"
+    >
       生成拼豆图纸
     </button>
+    <button
+      class="secondary-button"
+      loading="{{isAnalyzingPattern}}"
+      disabled="{{isAnalyzingPattern || !imagePath}}"
+      bindtap="analyzePatternStages"
+    >
+      查看识别过程
+    </button>
+  </view>
+
+  <view wx:if="{{patternDebug}}" class="panel debug-panel">
+    <view class="panel-heading">
+      <text class="panel-title">识别过程</text>
+      <text class="panel-badge">{{patternDebug.compressedGridWidth}} x {{patternDebug.compressedGridHeight}}</text>
+    </view>
+    <view class="debug-grid">
+      <view class="debug-stat">
+        <text class="debug-label">源图尺寸</text>
+        <text class="debug-value">{{patternDebug.sourceWidth}} x {{patternDebug.sourceHeight}}</text>
+      </view>
+      <view class="debug-stat">
+        <text class="debug-label">识别像素块</text>
+        <text class="debug-value">{{patternDebug.detectedBlockWidth || '-'}} x {{patternDebug.detectedBlockHeight || '-'}}</text>
+      </view>
+      <view class="debug-stat">
+        <text class="debug-label">原始像素格</text>
+        <text class="debug-value">{{patternDebug.detectedGridWidth}} x {{patternDebug.detectedGridHeight}} / {{patternDebug.detectedPixelCount}}</text>
+      </view>
+      <view class="debug-stat">
+        <text class="debug-label">压缩后像素格</text>
+        <text class="debug-value">{{patternDebug.compressedGridWidth}} x {{patternDebug.compressedGridHeight}} / {{patternDebug.compressedPixelCount}}</text>
+      </view>
+    </view>
+    <view class="debug-preview-grid">
+      <view class="debug-preview-card">
+        <text class="debug-label">原始识别图</text>
+        <image class="debug-preview-image" src="{{patternDebug.originalPreviewDataUrl}}" mode="aspectFit" />
+      </view>
+      <view class="debug-preview-card">
+        <text class="debug-label">压缩后图片</text>
+        <image class="debug-preview-image" src="{{patternDebug.compressedPreviewDataUrl}}" mode="aspectFit" />
+      </view>
+    </view>
   </view>
 
   <view wx:if="{{result}}" class="panel result-panel">
@@ -153,7 +237,7 @@
       </view>
       <view class="actions">
         <button size="mini" bindtap="previewPattern">预览图纸</button>
-        <button size="mini" bindtap="exportPng">导出 PNG</button>
+        <button size="mini" bindtap="exportPng">保存到相册</button>
       </view>
     </view>
     <view class="canvas-frame">

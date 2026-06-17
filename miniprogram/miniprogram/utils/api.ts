@@ -1,5 +1,5 @@
 import { API_BASE_URL } from "./config";
-import type { AiImageStatus, GenerationStatus, PaletteColor, PatternSizeRecommendation } from "./types";
+import type { AiImageStatus, GenerationStatus, PaletteColor, PatternDebugAnalysis, PatternSizeRecommendation } from "./types";
 import type { AiDetail } from "./aiDetailOptions";
 import type { AiEffect3d, AiShading, AiStyle } from "./aiGenerationOptions";
 import { buildAiImageFormData, buildGenerationFormData, type ColorComplexity, type SourceMode } from "./generationFormData";
@@ -59,16 +59,22 @@ export interface CreateAiImageInput {
   aiMaxColors: number;
 }
 
+export interface AnalyzePatternDebugInput {
+  imagePath: string;
+  widthCells: number;
+  heightCells: number;
+}
+
 export function uploadGeneration(input: UploadGenerationInput): Promise<GenerationStatus> {
   const formData = buildGenerationFormData({
     aiImageId: input.aiImageId,
     widthCells: input.widthCells,
-      heightCells: input.heightCells,
-      sourceMode: input.sourceMode || "resample",
-      colorComplexity: input.colorComplexity || "balanced",
-      samplingMode: input.samplingMode || "smooth",
-      aiMaxColors: input.aiMaxColors || 16
-    });
+    heightCells: input.heightCells,
+    sourceMode: input.sourceMode || "resample",
+    colorComplexity: input.colorComplexity || "balanced",
+    samplingMode: input.samplingMode || "nearest",
+    aiMaxColors: input.aiMaxColors || 16
+  });
   if (input.aiImageId) {
     return request<GenerationStatus>({
       url: `${API_BASE_URL}/api/generations`,
@@ -98,13 +104,25 @@ export function uploadGeneration(input: UploadGenerationInput): Promise<Generati
           }
           return;
         }
-        reject(new Error(`上传失败：${response.statusCode}`));
+        reject(new Error(errorMessageFromUploadResponse(response, "上传失败")));
       },
       fail(error) {
         reject(new Error(error.errMsg));
       }
     });
   });
+}
+
+function errorMessageFromUploadResponse(response: WechatMiniprogram.UploadFileSuccessCallbackResult, fallback: string): string {
+  try {
+    const parsed = JSON.parse(response.data) as { detail?: string };
+    if (parsed.detail) {
+      return parsed.detail;
+    }
+  } catch {
+    // Keep the status-code fallback when the backend response is not JSON.
+  }
+  return `${fallback}：${response.statusCode}`;
 }
 
 export function recommendPatternSize(imagePath: string): Promise<PatternSizeRecommendation> {
@@ -123,6 +141,34 @@ export function recommendPatternSize(imagePath: string): Promise<PatternSizeReco
           return;
         }
         reject(new Error(`推荐尺寸失败：${response.statusCode}`));
+      },
+      fail(error) {
+        reject(new Error(error.errMsg));
+      }
+    });
+  });
+}
+
+export function analyzePatternDebug(input: AnalyzePatternDebugInput): Promise<PatternDebugAnalysis> {
+  return new Promise((resolve, reject) => {
+    wx.uploadFile({
+      url: `${API_BASE_URL}/api/pattern-debug/analyze`,
+      filePath: input.imagePath,
+      name: "image",
+      formData: {
+        widthCells: String(input.widthCells),
+        heightCells: String(input.heightCells)
+      },
+      success(response) {
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          try {
+            resolve(JSON.parse(response.data) as PatternDebugAnalysis);
+          } catch {
+            reject(new Error("识别过程解析失败"));
+          }
+          return;
+        }
+        reject(new Error(errorMessageFromUploadResponse(response, "识别过程失败")));
       },
       fail(error) {
         reject(new Error(error.errMsg));

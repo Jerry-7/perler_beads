@@ -13,6 +13,7 @@
     "miniprogram/**/*.test.ts",
     "miniprogram/utils/canvasSizing.ts",
     "miniprogram/utils/aiDetailOptions.ts",
+    "miniprogram/utils/aiImageProgress.ts",
     "miniprogram/utils/aiGenerationOptions.ts",
     "miniprogram/utils/generationFormData.ts",
     "miniprogram/utils/patternDrawing.ts",

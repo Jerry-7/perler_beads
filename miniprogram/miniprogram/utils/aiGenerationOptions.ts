@@ -40,3 +40,14 @@ export function normalizeAiMaxColors(value: number): number {
   }
   return Math.min(MAX_AI_MAX_COLORS, Math.max(MIN_AI_MAX_COLORS, Math.round(value)));
 }
+
+export function normalizeAiMaxColorsInput(value: string): number | "" {
+  if (value.trim() === "") {
+    return "";
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return "";
+  }
+  return Math.min(MAX_AI_MAX_COLORS, Math.max(0, Math.round(parsed)));
+}

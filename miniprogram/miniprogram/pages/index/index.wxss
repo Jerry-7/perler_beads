@@ -218,6 +218,30 @@
   color: #ff6b6b;
 }
 
+.source-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14rpx;
+}
+
+.source-option {
+  height: 70rpx;
+  margin: 0;
+  border: 3rpx solid #333333;
+  border-radius: 8rpx;
+  color: #333333;
+  background: #ffffff;
+  font-size: 25rpx;
+  font-weight: 800;
+  line-height: 70rpx;
+}
+
+.source-option.active {
+  color: #111827;
+  background: #b8f7d4;
+  box-shadow: 4rpx 4rpx 0 #333333;
+}
+
 .generate-button {
   height: 88rpx;
   margin-top: 6rpx;
@@ -226,14 +250,108 @@
   font-size: 31rpx;
 }
 
-.generate-button[disabled] {
+.secondary-button {
+  height: 76rpx;
+  margin: 0;
+  border: 4rpx solid #333333;
+  border-radius: 8rpx;
+  color: #333333;
+  background: #ffe56b;
+  box-shadow: 5rpx 5rpx 0 #333333;
+  font-size: 27rpx;
+  font-weight: 800;
+  line-height: 76rpx;
+}
+
+.panel-action-button {
+  width: 100%;
+  margin-top: 18rpx;
+}
+
+.generate-button[disabled],
+.secondary-button[disabled] {
   color: #333333;
   background: #d7d7d7;
   opacity: 1;
 }
 
+.progress-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+}
+
+.progress-track {
+  overflow: hidden;
+  height: 28rpx;
+  border: 3rpx solid #333333;
+  border-radius: 999rpx;
+  background: #ffffff;
+}
+
+.progress-fill {
+  height: 100%;
+  border-right: 3rpx solid #333333;
+  background: #b8f7d4;
+  transition: width 0.25s ease;
+}
+
+.progress-text {
+  font-size: 24rpx;
+  font-weight: 800;
+  color: #35505a;
+}
+
 .result-panel {
   overflow: hidden;
+}
+
+.debug-panel {
+  overflow: hidden;
+}
+
+.debug-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14rpx;
+  margin-bottom: 18rpx;
+}
+
+.debug-stat,
+.debug-preview-card {
+  padding: 14rpx;
+  border: 3rpx solid #333333;
+  border-radius: 8rpx;
+  background: #fff8d6;
+  box-sizing: border-box;
+}
+
+.debug-label {
+  display: block;
+  margin-bottom: 8rpx;
+  font-size: 23rpx;
+  font-weight: 800;
+  color: #5f574d;
+}
+
+.debug-value {
+  font-size: 26rpx;
+  font-weight: 900;
+  color: #111827;
+}
+
+.debug-preview-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14rpx;
+}
+
+.debug-preview-image {
+  width: 100%;
+  height: 260rpx;
+  border: 3rpx solid #333333;
+  background: #ffffff;
+  box-sizing: border-box;
 }
 
 .result-title-group {

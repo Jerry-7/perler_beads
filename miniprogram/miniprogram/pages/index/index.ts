@@ -1,5 +1,6 @@
-import { aiImageUrl, createAiImage, type ColorComplexity, getAiImage, getGeneration, recommendPatternSize, uploadGeneration } from "../../utils/api";
+import { aiImageUrl, analyzePatternDebug, createAiImage, type ColorComplexity, getAiImage, getGeneration, recommendPatternSize, uploadGeneration } from "../../utils/api";
 import { AI_DETAIL_OPTIONS, DEFAULT_AI_DETAIL_INDEX, type AiDetail } from "../../utils/aiDetailOptions";
+import { aiImageProgressText, nextAiImageProgress } from "../../utils/aiImageProgress";
 import {
   AI_EFFECT_3D_OPTIONS,
   AI_SHADING_OPTIONS,
@@ -9,6 +10,7 @@ import {
   DEFAULT_AI_SHADING_INDEX,
   DEFAULT_AI_STYLE_INDEX,
   normalizeAiMaxColors,
+  normalizeAiMaxColorsInput,
   type AiEffect3d,
   type AiShading,
   type AiStyle
@@ -19,8 +21,10 @@ import { previewPatternImage } from "../../utils/patternPreview";
 import { applyPatternSizeOption, PATTERN_SIZE_OPTIONS } from "../../utils/patternSizeOptions";
 import { saveImageWithAlbumPermission } from "../../utils/photoAlbum";
 import { DEFAULT_SAMPLING_MODE_INDEX, SAMPLING_MODE_OPTIONS, type SamplingMode } from "../../utils/samplingModeOptions";
-import type { BeadUsage, PatternResult, PatternSizeRecommendation } from "../../utils/types";
-import { isEmptyCell } from "../../utils/types";
+import type { BeadUsage, PatternDebugAnalysis, PatternResult, PatternSizeRecommendation } from "../../utils/types";
+import { isBeadCell, isEmptyCell } from "../../utils/types";
+
+type PatternSource = "original" | "ai";
 
 Page({
   data: {
@@ -31,9 +35,13 @@ Page({
     patternSizeOptions: PATTERN_SIZE_OPTIONS,
     isCustomSize: false,
     isGenerating: false,
+    isAnalyzingPattern: false,
     isGeneratingAiImage: false,
+    aiImageProgress: 0,
+    aiImageProgressText: "",
     aiImageId: "",
     aiImagePath: "",
+    patternSource: "original" as PatternSource,
     isRecommendingSize: false,
     canGenerate: false,
     sizeRecommendationText: "",
@@ -49,7 +57,7 @@ Page({
     aiShading: AI_SHADING_OPTIONS[DEFAULT_AI_SHADING_INDEX].value as AiShading,
     aiShadingIndex: DEFAULT_AI_SHADING_INDEX,
     aiShadingOptions: AI_SHADING_OPTIONS,
-    aiMaxColors: DEFAULT_AI_MAX_COLORS,
+    aiMaxColors: DEFAULT_AI_MAX_COLORS as number | "",
     colorComplexity: "balanced" as ColorComplexity,
     colorComplexityIndex: 2,
     colorComplexityOptions: [
@@ -63,6 +71,7 @@ Page({
     samplingModeIndex: DEFAULT_SAMPLING_MODE_INDEX,
     samplingModeOptions: SAMPLING_MODE_OPTIONS,
     result: null as PatternResult | null,
+    patternDebug: null as PatternDebugAnalysis | null,
     usage: [] as BeadUsage[],
     canvasCssWidth: 320,
     canvasCssHeight: 320
@@ -74,7 +83,9 @@ Page({
         imagePath: path,
         aiImageId: "",
         aiImagePath: "",
+        patternSource: "original",
         result: null,
+        patternDebug: null,
         usage: [],
         canGenerate: true,
         sizeRecommendationText: ""
@@ -158,6 +169,14 @@ Page({
     });
   },
 
+  selectOriginalPatternSource() {
+    this.setData({ patternSource: "original" });
+  },
+
+  selectAiPatternSource() {
+    this.setData({ patternSource: "ai" });
+  },
+
   onAiDetailChange(event: WechatMiniprogram.PickerChange) {
     const index = Number(event.detail.value) || 0;
     const option = this.data.aiDetailOptions[index];
@@ -207,7 +226,7 @@ Page({
   },
 
   onAiMaxColorsInput(event: WechatMiniprogram.Input) {
-    this.setData({ aiMaxColors: normalizeAiMaxColors(Number(event.detail.value)) });
+    this.setData({ aiMaxColors: normalizeAiMaxColorsInput(event.detail.value) });
   },
 
   async applyRecommendedSize(imagePath: string) {
@@ -253,12 +272,17 @@ Page({
       aiShading,
       aiMaxColors
     } = this.data;
+    const normalizedAiMaxColors = aiMaxColors === "" ? DEFAULT_AI_MAX_COLORS : normalizeAiMaxColors(Number(aiMaxColors));
     if (!imagePath || widthCells < 1 || heightCells < 1) {
       wx.showToast({ title: "请先选择图片和格数", icon: "none" });
       return;
     }
 
-    this.setData({ isGeneratingAiImage: true });
+    this.setData({
+      isGeneratingAiImage: true,
+      aiImageProgress: 12,
+      aiImageProgressText: aiImageProgressText("pending", 12)
+    });
     try {
       const created = await createAiImage({
         imagePath,
@@ -268,7 +292,13 @@ Page({
         aiStyle,
         aiEffect3d,
         aiShading,
-        aiMaxColors
+        aiMaxColors: normalizedAiMaxColors
+      });
+      const submittedProgress = nextAiImageProgress(20, created.status);
+      this.setData({
+        aiImageId: created.aiImageId,
+        aiImageProgress: submittedProgress,
+        aiImageProgressText: aiImageProgressText(created.status, submittedProgress)
       });
       const completed = await this.waitForAiImage(created.aiImageId);
       if (completed.status !== "completed" || !completed.imageUrl) {
@@ -277,10 +307,16 @@ Page({
       this.setData({
         aiImageId: completed.aiImageId,
         aiImagePath: aiImageUrl(completed.aiImageId),
+        aiImageProgress: 100,
+        aiImageProgressText: aiImageProgressText("completed", 100),
         result: null,
         usage: []
       });
     } catch (error) {
+      this.setData({
+        aiImageProgress: 0,
+        aiImageProgressText: aiImageProgressText("failed", 0)
+      });
       wx.showToast({ title: error instanceof Error ? error.message : "AI 生图失败", icon: "none" });
     } finally {
       this.setData({ isGeneratingAiImage: false });
@@ -288,22 +324,32 @@ Page({
   },
 
   async generatePattern() {
-    const { aiImageId, widthCells, heightCells, colorComplexity, samplingMode, aiMaxColors } = this.data;
-    if (!aiImageId || widthCells < 1 || heightCells < 1) {
+    const { imagePath, aiImageId, patternSource, widthCells, heightCells, colorComplexity, samplingMode, aiMaxColors } = this.data;
+    const normalizedAiMaxColors = aiMaxColors === "" ? DEFAULT_AI_MAX_COLORS : normalizeAiMaxColors(Number(aiMaxColors));
+    if (widthCells < 1 || heightCells < 1) {
+      wx.showToast({ title: "请先选择有效格数", icon: "none" });
+      return;
+    }
+    if (patternSource === "ai" && !aiImageId) {
       wx.showToast({ title: "请先生成满意的 AI 图片", icon: "none" });
+      return;
+    }
+    if (patternSource === "original" && !imagePath) {
+      wx.showToast({ title: "请先选择图片", icon: "none" });
       return;
     }
 
     this.setData({ isGenerating: true });
     try {
       const created = await uploadGeneration({
-        aiImageId,
+        aiImageId: patternSource === "ai" ? aiImageId : undefined,
+        imagePath: patternSource === "original" ? imagePath : undefined,
         widthCells,
         heightCells,
         sourceMode: "resample",
         colorComplexity,
         samplingMode,
-        aiMaxColors
+        aiMaxColors: normalizedAiMaxColors
       });
       const completed = await this.waitForGeneration(created.generationId);
       if (completed.status !== "completed" || !completed.result) {
@@ -325,6 +371,24 @@ Page({
       wx.showToast({ title: error instanceof Error ? error.message : "生成失败", icon: "none" });
     } finally {
       this.setData({ isGenerating: false });
+    }
+  },
+
+  async analyzePatternStages() {
+    const { imagePath, widthCells, heightCells } = this.data;
+    if (!imagePath || widthCells < 1 || heightCells < 1) {
+      wx.showToast({ title: "请先选择图片和格数", icon: "none" });
+      return;
+    }
+
+    this.setData({ isAnalyzingPattern: true });
+    try {
+      const patternDebug = await analyzePatternDebug({ imagePath, widthCells, heightCells });
+      this.setData({ patternDebug });
+    } catch (error) {
+      wx.showToast({ title: error instanceof Error ? error.message : "识别过程失败", icon: "none" });
+    } finally {
+      this.setData({ isAnalyzingPattern: false });
     }
   },
 
@@ -393,10 +457,11 @@ Page({
               context.fillStyle = "#f8fafc";
               context.fillRect(x, y, cellSize, cellSize);
             } else {
-              context.fillStyle = `rgb(${cell.beadRgb[0]}, ${cell.beadRgb[1]}, ${cell.beadRgb[2]})`;
+              const displayRgb = isBeadCell(cell) ? cell.beadRgb : cell.sourceRgb;
+              context.fillStyle = `rgb(${displayRgb[0]}, ${displayRgb[1]}, ${displayRgb[2]})`;
               context.fillRect(x, y, cellSize, cellSize);
-              if (drawLabels) {
-                context.fillStyle = this.textColorFor(cell.beadRgb);
+              if (drawLabels && isBeadCell(cell)) {
+                context.fillStyle = this.textColorFor(displayRgb);
                 context.fillText(cell.beadCode, x + cellSize / 2, y + cellSize / 2);
               }
             }
@@ -432,6 +497,11 @@ Page({
       const poll = async () => {
         try {
           const aiImage = await getAiImage(aiImageId);
+          const progress = nextAiImageProgress(this.data.aiImageProgress, aiImage.status);
+          this.setData({
+            aiImageProgress: progress,
+            aiImageProgressText: aiImageProgressText(aiImage.status, progress)
+          });
           if (aiImage.status === "completed" || aiImage.status === "failed") {
             resolve(aiImage);
             return;
@@ -453,22 +523,48 @@ Page({
     });
   },
 
+  saveAiImageToAlbum() {
+    const { aiImagePath } = this.data;
+    if (!aiImagePath) {
+      wx.showToast({ title: "暂无 AI 图片", icon: "none" });
+      return;
+    }
+
+    wx.downloadFile({
+      url: aiImagePath,
+      success: async (response) => {
+        if (response.statusCode < 200 || response.statusCode >= 300 || !response.tempFilePath) {
+          wx.showToast({ title: "下载 AI 图片失败", icon: "none" });
+          return;
+        }
+        await this.saveTempImageToAlbum(response.tempFilePath);
+      },
+      fail: () => {
+        wx.showToast({ title: "下载 AI 图片失败", icon: "none" });
+      }
+    });
+  },
+
   exportPng() {
     this.drawPattern(true, async (tempFilePath) => {
       if (!tempFilePath) {
         wx.showToast({ title: "导出失败", icon: "none" });
         return;
       }
-      const result = await saveImageWithAlbumPermission(wx, tempFilePath);
-      if (result === "saved") {
-        wx.showToast({ title: "已保存图片", icon: "success" });
-        return;
-      }
-      if (result === "needs-settings") {
-        wx.showToast({ title: "请在设置中允许保存相册", icon: "none" });
-        return;
-      }
-      wx.showToast({ title: "保存失败，请检查权限", icon: "none" });
+      await this.saveTempImageToAlbum(tempFilePath);
     });
+  },
+
+  async saveTempImageToAlbum(tempFilePath: string) {
+    const result = await saveImageWithAlbumPermission(wx, tempFilePath);
+    if (result === "saved") {
+      wx.showToast({ title: "已保存图片", icon: "success" });
+      return;
+    }
+    if (result === "needs-settings") {
+      wx.showToast({ title: "请在设置中允许保存相册", icon: "none" });
+      return;
+    }
+    wx.showToast({ title: "保存失败，请检查权限", icon: "none" });
   }
 });

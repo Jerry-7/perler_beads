@@ -23,7 +23,13 @@ export interface BeadCell {
   distance: number;
 }
 
-export type PatternCell = EmptyCell | BeadCell;
+export interface RawColorCell {
+  x: number;
+  y: number;
+  sourceRgb: Rgb;
+}
+
+export type PatternCell = EmptyCell | BeadCell | RawColorCell;
 
 export interface BeadUsage {
   beadCode: string;
@@ -66,6 +72,25 @@ export interface PatternSizeRecommendation {
   reason: string;
 }
 
+export interface PatternDebugAnalysis {
+  sourceWidth: number;
+  sourceHeight: number;
+  detectedBlockWidth?: number | null;
+  detectedBlockHeight?: number | null;
+  detectedGridWidth: number;
+  detectedGridHeight: number;
+  detectedPixelCount: number;
+  compressedGridWidth: number;
+  compressedGridHeight: number;
+  compressedPixelCount: number;
+  originalPreviewDataUrl: string;
+  compressedPreviewDataUrl: string;
+}
+
 export function isEmptyCell(cell: PatternCell): cell is EmptyCell {
   return "empty" in cell && cell.empty === true;
+}
+
+export function isBeadCell(cell: PatternCell): cell is BeadCell {
+  return "beadRgb" in cell;
 }
