@@ -10,7 +10,7 @@
 
 ## 后端快速启动
 
-```powershell
+```powershell   
 cd server
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
