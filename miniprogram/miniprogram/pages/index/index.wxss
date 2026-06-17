@@ -1,31 +1,125 @@
-.page {
-  padding: 20rpx;
+.maker-page {
+  min-height: 100vh;
+  padding: 24rpx;
+  box-sizing: border-box;
+  color: #222222;
+  background: #f6f2e8;
+}
+
+.maker-hero {
+  display: flex;
+  min-height: 220rpx;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20rpx;
+  margin-bottom: 28rpx;
+  padding: 30rpx;
+  border: 5rpx solid #333333;
+  border-radius: 8rpx;
+  background: #8ee6ff;
+  box-shadow: 10rpx 10rpx 0 #333333;
+  box-sizing: border-box;
+}
+
+.hero-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 12rpx;
+}
+
+.hero-kicker {
+  align-self: flex-start;
+  padding: 6rpx 14rpx;
+  border: 3rpx solid #333333;
+  border-radius: 6rpx;
+  font-size: 22rpx;
+  font-weight: 800;
+  color: #333333;
+  background: #ffe56b;
+}
+
+.hero-title {
+  font-size: 44rpx;
+  font-weight: 900;
+  line-height: 1.12;
+}
+
+.hero-subtitle {
+  font-size: 25rpx;
+  line-height: 1.4;
+  color: #35505a;
+}
+
+.hero-button,
+.generate-button,
+.actions button {
+  margin: 0;
+  border: 4rpx solid #333333;
+  border-radius: 8rpx;
+  color: #ffffff;
+  background: #ff6b6b;
+  box-shadow: 6rpx 6rpx 0 #333333;
+  font-weight: 800;
+}
+
+.hero-button {
+  flex-shrink: 0;
+  padding: 0 24rpx;
+  font-size: 26rpx;
 }
 
 .panel {
-  margin-bottom: 20rpx;
-  padding: 20rpx;
-  border: 1rpx solid #d8dee8;
+  margin-bottom: 26rpx;
+  padding: 22rpx;
+  border: 4rpx solid #333333;
   border-radius: 8rpx;
   background: #ffffff;
+  box-shadow: 7rpx 7rpx 0 #333333;
+  box-sizing: border-box;
 }
 
-.controls {
+.panel-heading,
+.toolbar {
   display: flex;
-  flex-direction: column;
-  gap: 18rpx;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  margin-bottom: 18rpx;
 }
 
-.primary {
-  color: #ffffff;
-  background: #2563eb;
+.panel-title {
+  font-size: 31rpx;
+  font-weight: 900;
+  color: #222222;
+}
+
+.panel-badge {
+  flex-shrink: 0;
+  padding: 6rpx 14rpx;
+  border: 3rpx solid #333333;
+  border-radius: 999rpx;
+  font-size: 22rpx;
+  font-weight: 800;
+  color: #333333;
+  background: #b8f7d4;
 }
 
 .preview {
-  height: 280rpx;
-  border: 1rpx solid #e5e7eb;
-  border-radius: 8rpx;
+  display: flex;
+  height: 330rpx;
+  align-items: center;
+  justify-content: center;
   overflow: hidden;
+  border: 4rpx dashed #333333;
+  border-radius: 8rpx;
+  background: #fff8d6;
+  box-sizing: border-box;
+}
+
+.preview.has-image {
+  border-style: solid;
   background: #f8fafc;
 }
 
@@ -34,9 +128,62 @@
   height: 100%;
 }
 
-.helper-text {
+.empty-preview {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 12rpx;
+  color: #333333;
+}
+
+.empty-icon {
+  display: flex;
+  width: 82rpx;
+  height: 82rpx;
+  align-items: center;
+  justify-content: center;
+  border: 4rpx solid #333333;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 5rpx 5rpx 0 #333333;
+  font-size: 52rpx;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.empty-text {
+  font-size: 26rpx;
+  font-weight: 800;
+}
+
+.hint-strip {
+  margin-top: 16rpx;
+  padding: 14rpx 16rpx;
+  border: 3rpx solid #333333;
+  border-radius: 8rpx;
   font-size: 24rpx;
-  color: #64748b;
+  line-height: 1.45;
+  color: #4b3f2c;
+  background: #ffe56b;
+}
+
+.control-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 18rpx;
+}
+
+.field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 10rpx;
+}
+
+.field-label {
+  font-size: 25rpx;
+  font-weight: 800;
+  color: #333333;
 }
 
 .form-grid {
@@ -45,69 +192,111 @@
   gap: 16rpx;
 }
 
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 8rpx;
-  font-size: 26rpx;
-  color: #4b5563;
-}
-
-.field input {
-  height: 72rpx;
-  padding: 0 16rpx;
-  border: 1rpx solid #d1d5db;
-  border-radius: 6rpx;
+.field input,
+.picker-field {
+  height: 76rpx;
+  padding: 0 18rpx;
+  border: 3rpx solid #333333;
+  border-radius: 8rpx;
+  box-sizing: border-box;
   color: #111827;
   background: #ffffff;
+  font-size: 27rpx;
+  font-weight: 700;
 }
 
 .picker-field {
-  height: 72rpx;
-  padding: 0 16rpx;
-  border: 1rpx solid #d1d5db;
-  border-radius: 6rpx;
-  line-height: 72rpx;
-  color: #111827;
-  background: #ffffff;
-}
-
-.toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12rpx;
-  margin-bottom: 16rpx;
+  gap: 16rpx;
 }
 
-.title {
-  font-weight: 600;
-  color: #111827;
+.picker-arrow {
+  flex-shrink: 0;
+  font-size: 20rpx;
+  color: #ff6b6b;
+}
+
+.generate-button {
+  height: 88rpx;
+  margin-top: 6rpx;
+  line-height: 88rpx;
+  background: #2f6df6;
+  font-size: 31rpx;
+}
+
+.generate-button[disabled] {
+  color: #333333;
+  background: #d7d7d7;
+  opacity: 1;
+}
+
+.result-panel {
+  overflow: hidden;
+}
+
+.result-title-group {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4rpx;
+}
+
+.result-size {
+  font-size: 24rpx;
+  font-weight: 800;
+  color: #5f574d;
 }
 
 .actions {
   display: flex;
+  flex-shrink: 0;
   gap: 12rpx;
+}
+
+.actions button {
+  padding: 0 16rpx;
+  color: #333333;
+  background: #ffe56b;
+  font-size: 23rpx;
+  line-height: 58rpx;
+}
+
+.canvas-frame {
+  overflow: auto;
+  padding: 10rpx;
+  border: 4rpx solid #333333;
+  border-radius: 8rpx;
+  background: #f8fafc;
 }
 
 .pattern-canvas {
   display: block;
-  border: 1rpx solid #d1d5db;
   background: #ffffff;
 }
 
 .usage-list {
-  margin-top: 14rpx;
+  overflow: hidden;
+  border: 3rpx solid #333333;
+  border-radius: 8rpx;
 }
 
 .usage-row {
   display: grid;
-  grid-template-columns: 40rpx 84rpx 1fr 80rpx;
+  grid-template-columns: 42rpx 90rpx minmax(0, 1fr) 72rpx;
   align-items: center;
-  min-height: 56rpx;
-  border-bottom: 1rpx solid #eef2f7;
+  min-height: 64rpx;
+  padding: 0 14rpx;
+  border-bottom: 3rpx solid #333333;
   column-gap: 12rpx;
-  font-size: 26rpx;
+  font-size: 25rpx;
+  background: #ffffff;
+  box-sizing: border-box;
+}
+
+.usage-row:nth-child(2n) {
+  background: #fff8d6;
 }
 
 .usage-row:last-child {
@@ -115,21 +304,25 @@
 }
 
 .swatch {
-  width: 32rpx;
-  height: 32rpx;
-  border: 1rpx solid #cbd5e1;
-  border-radius: 4rpx;
+  width: 34rpx;
+  height: 34rpx;
+  border: 3rpx solid #333333;
+  border-radius: 6rpx;
 }
 
 .usage-code {
-  font-weight: 600;
+  font-weight: 900;
 }
 
 .usage-name {
+  overflow: hidden;
   color: #4b5563;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .usage-count {
   text-align: right;
+  font-weight: 900;
   color: #111827;
 }

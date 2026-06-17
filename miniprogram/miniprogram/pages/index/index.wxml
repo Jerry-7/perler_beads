@@ -1,60 +1,176 @@
-<view class="page">
-  <view class="panel controls">
-    <button class="primary" bindtap="chooseImage">选择图片</button>
-    <view wx:if="{{imagePath}}" class="preview">
-      <image class="preview-image" src="{{imagePath}}" mode="aspectFit" />
+<view class="maker-page">
+  <view class="maker-hero">
+    <view class="hero-copy">
+      <text class="hero-kicker">制作工具</text>
+      <text class="hero-title">照片变拼豆图纸</text>
+      <text class="hero-subtitle">选择图片，调整尺寸和颜色复杂度</text>
     </view>
-    <text wx:if="{{isRecommendingSize}}" class="helper-text">正在计算推荐格数...</text>
-    <text wx:elif="{{sizeRecommendationText}}" class="helper-text">{{sizeRecommendationText}}</text>
+    <button class="hero-button" bindtap="chooseImage">{{imagePath ? "重新选图" : "选择图片"}}</button>
+  </view>
+
+  <view class="panel upload-panel">
+    <view class="panel-heading">
+      <text class="panel-title">图片预览</text>
+      <text class="panel-badge">{{imagePath ? "已选择" : "待选择"}}</text>
+    </view>
+    <view class="preview {{imagePath ? 'has-image' : ''}}" bindtap="chooseImage">
+      <image wx:if="{{imagePath}}" class="preview-image" src="{{imagePath}}" mode="aspectFit" />
+      <view wx:else class="empty-preview">
+        <text class="empty-icon">+</text>
+        <text class="empty-text">点击添加照片</text>
+      </view>
+    </view>
+    <view wx:if="{{isRecommendingSize || sizeRecommendationText}}" class="hint-strip">
+      <text wx:if="{{isRecommendingSize}}">正在计算推荐格数...</text>
+      <text wx:else>{{sizeRecommendationText}}</text>
+    </view>
+  </view>
+
+  <view class="panel control-panel">
+    <view class="panel-heading">
+      <text class="panel-title">图纸参数</text>
+      <text class="panel-badge">{{widthCells}} x {{heightCells}}</text>
+    </view>
 
     <label class="field">
-      <text>图纸尺寸</text>
+      <text class="field-label">AI生成精细度</text>
+      <picker mode="selector" range="{{aiDetailOptions}}" range-key="label" value="{{aiDetailIndex}}" bindchange="onAiDetailChange">
+        <view class="picker-field">
+          <text>{{aiDetailOptions[aiDetailIndex].label}}</text>
+          <text class="picker-arrow">▼</text>
+        </view>
+      </picker>
+    </label>
+
+    <label class="field">
+      <text class="field-label">生图取向</text>
+      <picker mode="selector" range="{{aiStyleOptions}}" range-key="label" value="{{aiStyleIndex}}" bindchange="onAiStyleChange">
+        <view class="picker-field">
+          <text>{{aiStyleOptions[aiStyleIndex].label}}</text>
+          <text class="picker-arrow">▼</text>
+        </view>
+      </picker>
+    </label>
+
+    <view class="form-grid">
+      <label class="field">
+        <text class="field-label">3D效果</text>
+        <picker mode="selector" range="{{aiEffect3dOptions}}" range-key="label" value="{{aiEffect3dIndex}}" bindchange="onAiEffect3dChange">
+          <view class="picker-field">
+            <text>{{aiEffect3dOptions[aiEffect3dIndex].label}}</text>
+            <text class="picker-arrow">▼</text>
+          </view>
+        </picker>
+      </label>
+      <label class="field">
+        <text class="field-label">阴影方式</text>
+        <picker mode="selector" range="{{aiShadingOptions}}" range-key="label" value="{{aiShadingIndex}}" bindchange="onAiShadingChange">
+          <view class="picker-field">
+            <text>{{aiShadingOptions[aiShadingIndex].label}}</text>
+            <text class="picker-arrow">▼</text>
+          </view>
+        </picker>
+      </label>
+    </view>
+
+    <label class="field">
+      <text class="field-label">最大颜色数（4-64）</text>
+      <input type="number" value="{{aiMaxColors}}" bindinput="onAiMaxColorsInput" />
+    </label>
+
+    <button class="generate-button" loading="{{isGeneratingAiImage}}" disabled="{{!canGenerate || isGeneratingAiImage}}" bindtap="generateAiImage">
+      {{aiImageId ? "重新生成 AI 图" : "生成 AI 预览图"}}
+    </button>
+  </view>
+
+  <view wx:if="{{aiImagePath}}" class="panel upload-panel">
+    <view class="panel-heading">
+      <text class="panel-title">AI 预览图</text>
+      <text class="panel-badge">可图纸化</text>
+    </view>
+    <view class="preview has-image">
+      <image class="preview-image" src="{{aiImagePath}}" mode="aspectFit" />
+    </view>
+  </view>
+
+  <view class="panel control-panel">
+    <view class="panel-heading">
+      <text class="panel-title">图纸调整</text>
+      <text class="panel-badge">{{aiImageId ? "已就绪" : "先生成 AI 图"}}</text>
+    </view>
+
+    <label class="field">
+      <text class="field-label">目标尺寸</text>
       <picker mode="selector" range="{{patternSizeOptions}}" range-key="label" value="{{patternSizeIndex}}" bindchange="onPatternSizeChange">
-        <view class="picker-field">{{patternSizeOptions[patternSizeIndex].label}}</view>
+        <view class="picker-field">
+          <text>{{patternSizeOptions[patternSizeIndex].label}}</text>
+          <text class="picker-arrow">▼</text>
+        </view>
       </picker>
     </label>
 
     <view wx:if="{{isCustomSize}}" class="form-grid">
       <label class="field">
-        <text>宽度格数</text>
+        <text class="field-label">宽度格数</text>
         <input type="number" value="{{widthCells}}" bindinput="onWidthInput" />
       </label>
       <label class="field">
-        <text>高度格数</text>
+        <text class="field-label">高度格数</text>
         <input type="number" value="{{heightCells}}" bindinput="onHeightInput" />
       </label>
     </view>
 
     <label class="field">
-      <text>颜色复杂度</text>
-      <picker mode="selector" range="{{colorComplexityOptions}}" range-key="label" value="{{colorComplexityIndex}}" bindchange="onColorComplexityChange">
-        <view class="picker-field">{{colorComplexityOptions[colorComplexityIndex].label}}</view>
+      <text class="field-label">图纸效果</text>
+      <picker mode="selector" range="{{samplingModeOptions}}" range-key="label" value="{{samplingModeIndex}}" bindchange="onSamplingModeChange">
+        <view class="picker-field">
+          <text>{{samplingModeOptions[samplingModeIndex].label}}</text>
+          <text class="picker-arrow">▼</text>
+        </view>
       </picker>
     </label>
 
-    <button class="primary" loading="{{isGenerating}}" disabled="{{!canGenerate || isGenerating}}" bindtap="generatePattern">
-      生成图纸
+    <label class="field">
+      <text class="field-label">颜色复杂度</text>
+      <picker mode="selector" range="{{colorComplexityOptions}}" range-key="label" value="{{colorComplexityIndex}}" bindchange="onColorComplexityChange">
+        <view class="picker-field">
+          <text>{{colorComplexityOptions[colorComplexityIndex].label}}</text>
+          <text class="picker-arrow">▼</text>
+        </view>
+      </picker>
+    </label>
+
+    <button class="generate-button" loading="{{isGenerating}}" disabled="{{!aiImageId || isGenerating}}" bindtap="generatePattern">
+      生成拼豆图纸
     </button>
   </view>
 
-  <view wx:if="{{result}}" class="panel">
+  <view wx:if="{{result}}" class="panel result-panel">
     <view class="toolbar">
-      <text class="title">{{result.widthCells}} x {{result.heightCells}}</text>
+      <view class="result-title-group">
+        <text class="panel-title">生成图纸</text>
+        <text class="result-size">{{result.widthCells}} x {{result.heightCells}}</text>
+      </view>
       <view class="actions">
+        <button size="mini" bindtap="previewPattern">预览图纸</button>
         <button size="mini" bindtap="exportPng">导出 PNG</button>
-        <button size="mini" bindtap="exportJson">导出 JSON</button>
       </view>
     </view>
-    <canvas
-      class="pattern-canvas"
-      type="2d"
-      id="patternCanvas"
-      style="width: {{canvasCssWidth}}px; height: {{canvasCssHeight}}px;"
-    ></canvas>
+    <view class="canvas-frame">
+      <canvas
+        class="pattern-canvas"
+        type="2d"
+        id="patternCanvas"
+        style="width: {{canvasCssWidth}}px; height: {{canvasCssHeight}}px;"
+      ></canvas>
+    </view>
   </view>
 
-  <view wx:if="{{usage.length}}" class="panel">
-    <text class="title">色号统计</text>
+  <view wx:if="{{usage.length}}" class="panel usage-panel">
+    <view class="panel-heading">
+      <text class="panel-title">色号统计</text>
+      <text class="panel-badge">{{usage.length}} 色</text>
+    </view>
     <view class="usage-list">
       <view wx:for="{{usage}}" wx:key="beadCode" class="usage-row">
         <view class="swatch" style="background: rgb({{item.beadRgb[0]}}, {{item.beadRgb[1]}}, {{item.beadRgb[2]}});"></view>

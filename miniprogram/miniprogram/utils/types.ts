@@ -48,6 +48,13 @@ export interface GenerationStatus {
   result?: PatternResult;
 }
 
+export interface AiImageStatus {
+  aiImageId: string;
+  status: "pending" | "processing" | "completed" | "failed";
+  imageUrl?: string | null;
+  error?: string | null;
+}
+
 export interface PatternSizeRecommendation {
   widthCells: number;
   heightCells: number;

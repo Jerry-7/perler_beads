@@ -1,13 +1,16 @@
 import { API_BASE_URL } from "./config";
-import type { GenerationStatus, PaletteColor, PatternSizeRecommendation } from "./types";
+import type { AiImageStatus, GenerationStatus, PaletteColor, PatternSizeRecommendation } from "./types";
+import type { AiDetail } from "./aiDetailOptions";
+import type { AiEffect3d, AiShading, AiStyle } from "./aiGenerationOptions";
+import { buildAiImageFormData, buildGenerationFormData, type ColorComplexity, type SourceMode } from "./generationFormData";
+import type { SamplingMode } from "./samplingModeOptions";
 
 interface PaletteResponse {
   version: string;
   colors: PaletteColor[];
 }
 
-export type SourceMode = "auto" | "pixel-art" | "resample";
-export type ColorComplexity = "minimal" | "simple" | "balanced" | "detailed" | "original";
+export type { ColorComplexity, SourceMode } from "./generationFormData";
 
 function request<T>(options: WechatMiniprogram.RequestOption): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -34,24 +37,58 @@ export function getPalette(): Promise<PaletteResponse> {
   });
 }
 
-export function uploadGeneration(
-  imagePath: string,
-  widthCells: number,
-  heightCells: number,
-  sourceMode: SourceMode = "resample",
-  colorComplexity: ColorComplexity = "balanced"
-): Promise<GenerationStatus> {
+export interface UploadGenerationInput {
+  imagePath?: string;
+  aiImageId?: string;
+  widthCells: number;
+  heightCells: number;
+  sourceMode?: SourceMode;
+  colorComplexity?: ColorComplexity;
+  samplingMode?: SamplingMode;
+  aiMaxColors?: number;
+}
+
+export interface CreateAiImageInput {
+  imagePath: string;
+  widthCells: number;
+  heightCells: number;
+  aiDetail: AiDetail;
+  aiStyle: AiStyle;
+  aiEffect3d: AiEffect3d;
+  aiShading: AiShading;
+  aiMaxColors: number;
+}
+
+export function uploadGeneration(input: UploadGenerationInput): Promise<GenerationStatus> {
+  const formData = buildGenerationFormData({
+    aiImageId: input.aiImageId,
+    widthCells: input.widthCells,
+      heightCells: input.heightCells,
+      sourceMode: input.sourceMode || "resample",
+      colorComplexity: input.colorComplexity || "balanced",
+      samplingMode: input.samplingMode || "smooth",
+      aiMaxColors: input.aiMaxColors || 16
+    });
+  if (input.aiImageId) {
+    return request<GenerationStatus>({
+      url: `${API_BASE_URL}/api/generations`,
+      method: "POST",
+      header: {
+        "content-type": "application/x-www-form-urlencoded"
+      },
+      data: formData
+    });
+  }
+  if (!input.imagePath) {
+    return Promise.reject(new Error("缺少图片"));
+  }
+  const imagePath = input.imagePath;
   return new Promise((resolve, reject) => {
     wx.uploadFile({
       url: `${API_BASE_URL}/api/generations`,
       filePath: imagePath,
       name: "image",
-      formData: {
-        widthCells: String(widthCells),
-        heightCells: String(heightCells),
-        sourceMode,
-        colorComplexity
-      },
+      formData,
       success(response) {
         if (response.statusCode >= 200 && response.statusCode < 300) {
           try {
@@ -94,9 +131,45 @@ export function recommendPatternSize(imagePath: string): Promise<PatternSizeReco
   });
 }
 
+export function createAiImage(input: CreateAiImageInput): Promise<AiImageStatus> {
+  return new Promise((resolve, reject) => {
+    wx.uploadFile({
+      url: `${API_BASE_URL}/api/ai-images`,
+      filePath: input.imagePath,
+      name: "image",
+      formData: buildAiImageFormData(input),
+      success(response) {
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          try {
+            resolve(JSON.parse(response.data) as AiImageStatus);
+          } catch {
+            reject(new Error("AI 图片结果解析失败"));
+          }
+          return;
+        }
+        reject(new Error(`AI 生图失败：${response.statusCode}`));
+      },
+      fail(error) {
+        reject(new Error(error.errMsg));
+      }
+    });
+  });
+}
+
 export function getGeneration(generationId: string): Promise<GenerationStatus> {
   return request<GenerationStatus>({
     url: `${API_BASE_URL}/api/generations/${generationId}`,
     method: "GET"
   });
+}
+
+export function getAiImage(aiImageId: string): Promise<AiImageStatus> {
+  return request<AiImageStatus>({
+    url: `${API_BASE_URL}/api/ai-images/${aiImageId}`,
+    method: "GET"
+  });
+}
+
+export function aiImageUrl(aiImageId: string): string {
+  return `${API_BASE_URL}/api/ai-images/${aiImageId}/image`;
 }

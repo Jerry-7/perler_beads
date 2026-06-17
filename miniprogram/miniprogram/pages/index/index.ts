@@ -1,8 +1,24 @@
-import { type ColorComplexity, getGeneration, recommendPatternSize, uploadGeneration } from "../../utils/api";
+import { aiImageUrl, createAiImage, type ColorComplexity, getAiImage, getGeneration, recommendPatternSize, uploadGeneration } from "../../utils/api";
+import { AI_DETAIL_OPTIONS, DEFAULT_AI_DETAIL_INDEX, type AiDetail } from "../../utils/aiDetailOptions";
+import {
+  AI_EFFECT_3D_OPTIONS,
+  AI_SHADING_OPTIONS,
+  AI_STYLE_OPTIONS,
+  DEFAULT_AI_EFFECT_3D_INDEX,
+  DEFAULT_AI_MAX_COLORS,
+  DEFAULT_AI_SHADING_INDEX,
+  DEFAULT_AI_STYLE_INDEX,
+  normalizeAiMaxColors,
+  type AiEffect3d,
+  type AiShading,
+  type AiStyle
+} from "../../utils/aiGenerationOptions";
 import { calculatePreviewCanvasSize } from "../../utils/canvasSizing";
 import { shouldDrawCellLabel } from "../../utils/patternDrawing";
+import { previewPatternImage } from "../../utils/patternPreview";
 import { applyPatternSizeOption, PATTERN_SIZE_OPTIONS } from "../../utils/patternSizeOptions";
 import { saveImageWithAlbumPermission } from "../../utils/photoAlbum";
+import { DEFAULT_SAMPLING_MODE_INDEX, SAMPLING_MODE_OPTIONS, type SamplingMode } from "../../utils/samplingModeOptions";
 import type { BeadUsage, PatternResult, PatternSizeRecommendation } from "../../utils/types";
 import { isEmptyCell } from "../../utils/types";
 
@@ -15,9 +31,25 @@ Page({
     patternSizeOptions: PATTERN_SIZE_OPTIONS,
     isCustomSize: false,
     isGenerating: false,
+    isGeneratingAiImage: false,
+    aiImageId: "",
+    aiImagePath: "",
     isRecommendingSize: false,
     canGenerate: false,
     sizeRecommendationText: "",
+    aiDetail: AI_DETAIL_OPTIONS[DEFAULT_AI_DETAIL_INDEX].value as AiDetail,
+    aiDetailIndex: DEFAULT_AI_DETAIL_INDEX,
+    aiDetailOptions: AI_DETAIL_OPTIONS,
+    aiStyle: AI_STYLE_OPTIONS[DEFAULT_AI_STYLE_INDEX].value as AiStyle,
+    aiStyleIndex: DEFAULT_AI_STYLE_INDEX,
+    aiStyleOptions: AI_STYLE_OPTIONS,
+    aiEffect3d: AI_EFFECT_3D_OPTIONS[DEFAULT_AI_EFFECT_3D_INDEX].value as AiEffect3d,
+    aiEffect3dIndex: DEFAULT_AI_EFFECT_3D_INDEX,
+    aiEffect3dOptions: AI_EFFECT_3D_OPTIONS,
+    aiShading: AI_SHADING_OPTIONS[DEFAULT_AI_SHADING_INDEX].value as AiShading,
+    aiShadingIndex: DEFAULT_AI_SHADING_INDEX,
+    aiShadingOptions: AI_SHADING_OPTIONS,
+    aiMaxColors: DEFAULT_AI_MAX_COLORS,
     colorComplexity: "balanced" as ColorComplexity,
     colorComplexityIndex: 2,
     colorComplexityOptions: [
@@ -27,6 +59,9 @@ Page({
       { label: "细节", value: "detailed" },
       { label: "原色", value: "original" }
     ],
+    samplingMode: SAMPLING_MODE_OPTIONS[DEFAULT_SAMPLING_MODE_INDEX].value as SamplingMode,
+    samplingModeIndex: DEFAULT_SAMPLING_MODE_INDEX,
+    samplingModeOptions: SAMPLING_MODE_OPTIONS,
     result: null as PatternResult | null,
     usage: [] as BeadUsage[],
     canvasCssWidth: 320,
@@ -37,6 +72,10 @@ Page({
     const setSelectedImage = (path: string) => {
       this.setData({
         imagePath: path,
+        aiImageId: "",
+        aiImagePath: "",
+        result: null,
+        usage: [],
         canGenerate: true,
         sizeRecommendationText: ""
       });
@@ -107,6 +146,70 @@ Page({
     });
   },
 
+  onSamplingModeChange(event: WechatMiniprogram.PickerChange) {
+    const index = Number(event.detail.value) || 0;
+    const option = this.data.samplingModeOptions[index];
+    if (!option) {
+      return;
+    }
+    this.setData({
+      samplingMode: option.value,
+      samplingModeIndex: index
+    });
+  },
+
+  onAiDetailChange(event: WechatMiniprogram.PickerChange) {
+    const index = Number(event.detail.value) || 0;
+    const option = this.data.aiDetailOptions[index];
+    if (!option) {
+      return;
+    }
+    this.setData({
+      aiDetail: option.value,
+      aiDetailIndex: index
+    });
+  },
+
+  onAiStyleChange(event: WechatMiniprogram.PickerChange) {
+    const index = Number(event.detail.value) || 0;
+    const option = this.data.aiStyleOptions[index];
+    if (!option) {
+      return;
+    }
+    this.setData({
+      aiStyle: option.value,
+      aiStyleIndex: index
+    });
+  },
+
+  onAiEffect3dChange(event: WechatMiniprogram.PickerChange) {
+    const index = Number(event.detail.value) || 0;
+    const option = this.data.aiEffect3dOptions[index];
+    if (!option) {
+      return;
+    }
+    this.setData({
+      aiEffect3d: option.value,
+      aiEffect3dIndex: index
+    });
+  },
+
+  onAiShadingChange(event: WechatMiniprogram.PickerChange) {
+    const index = Number(event.detail.value) || 0;
+    const option = this.data.aiShadingOptions[index];
+    if (!option) {
+      return;
+    }
+    this.setData({
+      aiShading: option.value,
+      aiShadingIndex: index
+    });
+  },
+
+  onAiMaxColorsInput(event: WechatMiniprogram.Input) {
+    this.setData({ aiMaxColors: normalizeAiMaxColors(Number(event.detail.value)) });
+  },
+
   async applyRecommendedSize(imagePath: string) {
     this.setData({ isRecommendingSize: true });
     try {
@@ -139,16 +242,69 @@ Page({
     return `推荐 ${recommendation.widthCells} x ${recommendation.heightCells}（原图 ${recommendation.sourceWidth} x ${recommendation.sourceHeight}${blockSize}）`;
   },
 
-  async generatePattern() {
-    const { imagePath, widthCells, heightCells, colorComplexity } = this.data;
+  async generateAiImage() {
+    const {
+      imagePath,
+      widthCells,
+      heightCells,
+      aiDetail,
+      aiStyle,
+      aiEffect3d,
+      aiShading,
+      aiMaxColors
+    } = this.data;
     if (!imagePath || widthCells < 1 || heightCells < 1) {
       wx.showToast({ title: "请先选择图片和格数", icon: "none" });
       return;
     }
 
+    this.setData({ isGeneratingAiImage: true });
+    try {
+      const created = await createAiImage({
+        imagePath,
+        widthCells,
+        heightCells,
+        aiDetail,
+        aiStyle,
+        aiEffect3d,
+        aiShading,
+        aiMaxColors
+      });
+      const completed = await this.waitForAiImage(created.aiImageId);
+      if (completed.status !== "completed" || !completed.imageUrl) {
+        throw new Error(completed.error || "AI 生图失败");
+      }
+      this.setData({
+        aiImageId: completed.aiImageId,
+        aiImagePath: aiImageUrl(completed.aiImageId),
+        result: null,
+        usage: []
+      });
+    } catch (error) {
+      wx.showToast({ title: error instanceof Error ? error.message : "AI 生图失败", icon: "none" });
+    } finally {
+      this.setData({ isGeneratingAiImage: false });
+    }
+  },
+
+  async generatePattern() {
+    const { aiImageId, widthCells, heightCells, colorComplexity, samplingMode, aiMaxColors } = this.data;
+    if (!aiImageId || widthCells < 1 || heightCells < 1) {
+      wx.showToast({ title: "请先生成满意的 AI 图片", icon: "none" });
+      return;
+    }
+
     this.setData({ isGenerating: true });
     try {
-      const created = await uploadGeneration(imagePath, widthCells, heightCells, "resample", colorComplexity);
+      const created = await uploadGeneration({
+        aiImageId,
+        widthCells,
+        heightCells,
+        sourceMode: "resample",
+        colorComplexity,
+        samplingMode,
+        aiMaxColors
+      });
       const completed = await this.waitForGeneration(created.generationId);
       if (completed.status !== "completed" || !completed.result) {
         throw new Error(completed.error || "生成失败");
@@ -271,6 +427,32 @@ Page({
     return luminance > 150 ? "#111827" : "#ffffff";
   },
 
+  waitForAiImage(aiImageId: string) {
+    return new Promise<Awaited<ReturnType<typeof getAiImage>>>((resolve, reject) => {
+      const poll = async () => {
+        try {
+          const aiImage = await getAiImage(aiImageId);
+          if (aiImage.status === "completed" || aiImage.status === "failed") {
+            resolve(aiImage);
+            return;
+          }
+          setTimeout(poll, 700);
+        } catch (error) {
+          reject(error);
+        }
+      };
+      poll();
+    });
+  },
+
+  previewPattern() {
+    this.drawPattern(true, (tempFilePath) => {
+      if (!previewPatternImage(wx, tempFilePath)) {
+        wx.showToast({ title: "预览失败", icon: "none" });
+      }
+    });
+  },
+
   exportPng() {
     this.drawPattern(true, async (tempFilePath) => {
       if (!tempFilePath) {
@@ -287,28 +469,6 @@ Page({
         return;
       }
       wx.showToast({ title: "保存失败，请检查权限", icon: "none" });
-    });
-  },
-
-  exportJson() {
-    if (!this.data.result) {
-      return;
-    }
-
-    const fileName = `${wx.env.USER_DATA_PATH}/perler-pattern-${Date.now()}.json`;
-    const fileSystem = wx.getFileSystemManager();
-    fileSystem.writeFile({
-      filePath: fileName,
-      data: JSON.stringify(this.data.result, null, 2),
-      encoding: "utf8",
-      success: () => {
-        wx.showModal({
-          title: "JSON 已导出",
-          content: fileName,
-          showCancel: false
-        });
-      },
-      fail: () => wx.showToast({ title: "JSON 导出失败", icon: "none" })
     });
   }
 });
