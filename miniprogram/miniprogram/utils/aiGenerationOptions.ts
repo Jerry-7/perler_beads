@@ -22,7 +22,7 @@ export const AI_EFFECT_3D_OPTIONS: AiOption<AiEffect3d>[] = [
 ];
 
 export const AI_SHADING_OPTIONS: AiOption<AiShading>[] = [
-  { label: "平涂", value: "flat" },
+  { label: "平面", value: "flat" },
   { label: "阶梯阴影", value: "step" },
   { label: "抖动阴影", value: "dithered" }
 ];

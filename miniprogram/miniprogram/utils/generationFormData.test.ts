@@ -23,8 +23,7 @@ test("AI image form data includes AI prompt controls", () => {
     aiDetail: "detailed",
     aiStyle: "crafted",
     aiEffect3d: "strong",
-    aiShading: "dithered",
-    aiMaxColors: 32
+    aiShading: "dithered"
   });
 
   assertEqual(formData.widthCells, "52", "width");
@@ -33,7 +32,7 @@ test("AI image form data includes AI prompt controls", () => {
   assertEqual(formData.aiStyle, "crafted", "ai style");
   assertEqual(formData.aiEffect3d, "strong", "ai effect");
   assertEqual(formData.aiShading, "dithered", "ai shading");
-  assertEqual(formData.aiMaxColors, "32", "max colors");
+  assertEqual("aiMaxColors" in formData, false, "AI image should not send color count");
 });
 
 test("generation form data can use an existing AI image", () => {
@@ -43,7 +42,7 @@ test("generation form data can use an existing AI image", () => {
     heightCells: 78,
     sourceMode: "resample",
     colorComplexity: "balanced",
-    samplingMode: "smooth",
+    samplingMode: "center-shrink",
     aiMaxColors: 32
   });
 
@@ -52,6 +51,32 @@ test("generation form data can use an existing AI image", () => {
   assertEqual(formData.heightCells, "78", "height");
   assertEqual(formData.sourceMode, "resample", "source mode");
   assertEqual(formData.colorComplexity, "balanced", "color complexity");
-  assertEqual(formData.samplingMode, "smooth", "sampling mode");
+  assertEqual(formData.samplingMode, "center-shrink", "sampling mode");
   assertEqual(formData.aiMaxColors, "32", "max colors");
+});
+
+test("generation form data can send coverage sampling mode", () => {
+  const formData = buildGenerationFormData({
+    widthCells: 16,
+    heightCells: 16,
+    sourceMode: "resample",
+    colorComplexity: "original",
+    samplingMode: "coverage",
+    aiMaxColors: 16
+  });
+
+  assertEqual(formData.samplingMode, "coverage", "coverage sampling mode");
+});
+
+test("generation form data can send grid scan sampling mode", () => {
+  const formData = buildGenerationFormData({
+    widthCells: 1,
+    heightCells: 1,
+    sourceMode: "resample",
+    colorComplexity: "original",
+    samplingMode: "grid-scan",
+    aiMaxColors: 16
+  });
+
+  assertEqual(formData.samplingMode, "grid-scan", "grid scan sampling mode");
 });

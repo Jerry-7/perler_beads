@@ -16,10 +16,13 @@
     "miniprogram/utils/aiImageProgress.ts",
     "miniprogram/utils/aiGenerationOptions.ts",
     "miniprogram/utils/generationFormData.ts",
+    "miniprogram/utils/patternEditing.ts",
+    "miniprogram/utils/patternCanvasEditor.ts",
     "miniprogram/utils/patternDrawing.ts",
     "miniprogram/utils/photoAlbum.ts",
     "miniprogram/utils/patternPreview.ts",
     "miniprogram/utils/patternSizeOptions.ts",
+    "miniprogram/utils/patternSizeWarning.ts",
     "miniprogram/utils/routes.ts",
     "miniprogram/utils/homeContent.ts",
     "miniprogram/utils/samplingModeOptions.ts"

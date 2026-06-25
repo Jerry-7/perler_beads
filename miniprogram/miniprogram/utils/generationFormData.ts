@@ -22,7 +22,6 @@ export interface AiImageFormDataInput {
   aiStyle: AiStyle;
   aiEffect3d: AiEffect3d;
   aiShading: AiShading;
-  aiMaxColors: number;
 }
 
 export function buildGenerationFormData(input: GenerationFormDataInput): Record<string, string> {
@@ -47,7 +46,6 @@ export function buildAiImageFormData(input: AiImageFormDataInput): Record<string
     aiDetail: input.aiDetail,
     aiStyle: input.aiStyle,
     aiEffect3d: input.aiEffect3d,
-    aiShading: input.aiShading,
-    aiMaxColors: String(input.aiMaxColors)
+    aiShading: input.aiShading
   };
 }

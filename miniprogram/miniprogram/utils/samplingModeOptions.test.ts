@@ -20,14 +20,14 @@ test("sampling mode options use user friendly labels", () => {
   assertEqual(SAMPLING_MODE_OPTIONS.length, 5, "option count");
   assertEqual(SAMPLING_MODE_OPTIONS[0].label, "原始映射", "raw label");
   assertEqual(SAMPLING_MODE_OPTIONS[0].value, "nearest", "raw value");
-  assertEqual(SAMPLING_MODE_OPTIONS[1].label, "中心净化", "center shrink label");
-  assertEqual(SAMPLING_MODE_OPTIONS[1].value, "center-shrink", "center shrink value");
-  assertEqual(SAMPLING_MODE_OPTIONS[2].label, "清晰保边", "edge label");
-  assertEqual(SAMPLING_MODE_OPTIONS[2].value, "dominant", "edge value");
-  assertEqual(SAMPLING_MODE_OPTIONS[3].label, "细节优先", "detail label");
-  assertEqual(SAMPLING_MODE_OPTIONS[3].value, "detail", "detail value");
-  assertEqual(SAMPLING_MODE_OPTIONS[4].label, "平滑简化", "smooth label");
-  assertEqual(SAMPLING_MODE_OPTIONS[4].value, "smooth", "smooth value");
+  assertEqual(SAMPLING_MODE_OPTIONS[1].label, "比例映射", "coverage label");
+  assertEqual(SAMPLING_MODE_OPTIONS[1].value, "coverage", "coverage value");
+  assertEqual(SAMPLING_MODE_OPTIONS[2].label, "半成品识别", "grid scan label");
+  assertEqual(SAMPLING_MODE_OPTIONS[2].value, "grid-scan", "grid scan value");
+  assertEqual(SAMPLING_MODE_OPTIONS[3].label, "中心特征提取", "center shrink label");
+  assertEqual(SAMPLING_MODE_OPTIONS[3].value, "center-shrink", "center shrink value");
+  assertEqual(SAMPLING_MODE_OPTIONS[4].label, "彩色简笔", "colored sketch label");
+  assertEqual(SAMPLING_MODE_OPTIONS[4].value, "line-art", "colored sketch value");
 });
 
 test("default sampling mode uses raw source color mapping", () => {

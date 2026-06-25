@@ -56,7 +56,6 @@ export interface CreateAiImageInput {
   aiStyle: AiStyle;
   aiEffect3d: AiEffect3d;
   aiShading: AiShading;
-  aiMaxColors: number;
 }
 
 export interface AnalyzePatternDebugInput {

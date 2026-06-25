@@ -45,6 +45,7 @@ export interface PatternResult {
   cells: PatternCell[][];
   usage: BeadUsage[];
   generatedAt: string;
+  rleRows?: string[] | null;
 }
 
 export interface GenerationStatus {
@@ -66,6 +67,7 @@ export interface PatternSizeRecommendation {
   heightCells: number;
   sourceWidth: number;
   sourceHeight: number;
+  recommendedColors: number;
   detectedBlockWidth?: number | null;
   detectedBlockHeight?: number | null;
   confidence: number;
