@@ -74,6 +74,8 @@ def resample_by_mode(
 ) -> list[list[PixelArtCell]]:
     if sampling_mode == "center-shrink":
         return center_shrink_resample(image, width_cells, height_cells)
+    if sampling_mode == "coverage":
+        return coverage_region_resample(image, width_cells, height_cells)
     if sampling_mode == "raw":
         return compressed_pixel_art_resample(image, width_cells, height_cells)
     if sampling_mode == "smooth":
@@ -134,6 +136,20 @@ def compressed_pixel_art_resample(image: Image.Image, width_cells: int, height_c
     return region_resample(image, width_cells, height_cells, compressed_pixel_art_region_color)
 
 
+def coverage_region_resample(image: Image.Image, width_cells: int, height_cells: int) -> list[list[PixelArtCell]]:
+    matrix: list[list[PixelArtCell]] = []
+    for y in range(height_cells):
+        row: list[PixelArtCell] = []
+        top = y * image.height / height_cells
+        bottom = (y + 1) * image.height / height_cells
+        for x in range(width_cells):
+            left = x * image.width / width_cells
+            right = (x + 1) * image.width / width_cells
+            row.append(PixelArtCell(x=x, y=y, rgb=coverage_region_color(image, left, top, right, bottom)))
+        matrix.append(row)
+    return matrix
+
+
 def center_shrink_resample(image: Image.Image, width_cells: int, height_cells: int) -> list[list[PixelArtCell]]:
     return region_resample(image, width_cells, height_cells, center_shrink_region_color)
 
@@ -171,6 +187,36 @@ def compressed_pixel_art_region_color(image: Image.Image, left: int, top: int, r
         return min(dark_pixels, key=sum)
 
     return Counter(pixels).most_common(1)[0][0]
+
+
+def coverage_region_color(image: Image.Image, left: float, top: float, right: float, bottom: float) -> tuple[int, int, int]:
+    weighted_pixels = [
+        (image.getpixel((x, y)), overlap_area(left, top, right, bottom, x, y))
+        for y in range(max(0, int(top)), min(image.height, int_ceil(bottom)))
+        for x in range(max(0, int(left)), min(image.width, int_ceil(right)))
+        if overlap_area(left, top, right, bottom, x, y) > 0
+    ]
+    if not weighted_pixels:
+        return (0, 0, 0)
+
+    total_area = sum(area for _pixel, area in weighted_pixels)
+    dark_weighted_pixels = [(pixel, area) for pixel, area in weighted_pixels if sum(pixel) < DARK_PIXEL_SUM_THRESHOLD]
+    dark_area = sum(area for _pixel, area in dark_weighted_pixels)
+    if dark_weighted_pixels and dark_area / total_area > DARK_PIXEL_RATIO_THRESHOLD:
+        return min((pixel for pixel, _area in dark_weighted_pixels), key=sum)
+
+    buckets: dict[tuple[int, int, int], list[tuple[tuple[int, int, int], float]]] = defaultdict(list)
+    for pixel, area in weighted_pixels:
+        buckets[quantize_rgb(pixel)].append((pixel, area))
+
+    dominant_weighted_pixels = max(buckets.values(), key=lambda items: sum(area for _pixel, area in items))
+    return weighted_average_color(dominant_weighted_pixels)
+
+
+def overlap_area(left: float, top: float, right: float, bottom: float, pixel_x: int, pixel_y: int) -> float:
+    overlap_width = max(0.0, min(right, pixel_x + 1) - max(left, pixel_x))
+    overlap_height = max(0.0, min(bottom, pixel_y + 1) - max(top, pixel_y))
+    return overlap_width * overlap_height
 
 
 def center_shrink_region_color(image: Image.Image, left: int, top: int, right: int, bottom: int) -> tuple[int, int, int]:
@@ -292,6 +338,15 @@ def average_color(pixels: list[tuple[int, int, int]]) -> tuple[int, int, int]:
         round(sum(pixel[0] for pixel in pixels) / count),
         round(sum(pixel[1] for pixel in pixels) / count),
         round(sum(pixel[2] for pixel in pixels) / count),
+    )
+
+
+def weighted_average_color(weighted_pixels: list[tuple[tuple[int, int, int], float]]) -> tuple[int, int, int]:
+    total_area = sum(area for _pixel, area in weighted_pixels)
+    return (
+        round(sum(pixel[0] * area for pixel, area in weighted_pixels) / total_area),
+        round(sum(pixel[1] * area for pixel, area in weighted_pixels) / total_area),
+        round(sum(pixel[2] * area for pixel, area in weighted_pixels) / total_area),
     )
 
 

@@ -23,6 +23,7 @@ class PatternSizeRecommendation(BaseModel):
     heightCells: int
     sourceWidth: int
     sourceHeight: int
+    recommendedColors: int = 16
     detectedBlockWidth: int | None = None
     detectedBlockHeight: int | None = None
     confidence: float = 0
@@ -83,6 +84,7 @@ class PatternResult(BaseModel):
     cells: list[list[PatternCell]]
     usage: list[BeadUsage]
     generatedAt: str
+    rleRows: list[str] | None = None
 
 
 class GenerationResponse(BaseModel):

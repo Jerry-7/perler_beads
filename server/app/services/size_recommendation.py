@@ -33,6 +33,7 @@ def recommend_pattern_size(source_width: int, source_height: int) -> PatternSize
         heightCells=height_cells,
         sourceWidth=source_width,
         sourceHeight=source_height,
+        recommendedColors=16,
         detectedBlockWidth=None,
         detectedBlockHeight=None,
         confidence=0,
@@ -54,15 +55,42 @@ def recommend_pattern_size_from_image(image_bytes: bytes) -> PatternSizeRecommen
                     heightCells=height_cells,
                     sourceWidth=rgb_image.width,
                     sourceHeight=rgb_image.height,
+                    recommendedColors=recommend_color_count(rgb_image),
                     detectedBlockWidth=block_width,
                     detectedBlockHeight=block_height,
                     confidence=round(confidence, 3),
                     reason=f"识别到约 {block_width} x {block_height} 像素块",
                 )
 
-            return recommend_pattern_size(rgb_image.width, rgb_image.height)
+            recommendation = recommend_pattern_size(rgb_image.width, rgb_image.height)
+            recommendation.recommendedColors = recommend_color_count(rgb_image)
+            return recommendation
     except UnidentifiedImageError as exc:
         raise SizeRecommendationError("Uploaded file is not a supported image") from exc
+
+
+def recommend_color_count(image: Image.Image) -> int:
+    preview = image.copy()
+    preview.thumbnail((64, 64), Image.Resampling.BILINEAR)
+    colors = {quantize_rgb(preview.getpixel((x, y))) for y in range(preview.height) for x in range(preview.width)}
+    unique_count = len(colors)
+    if unique_count <= 1:
+        return 4
+    if unique_count <= 8:
+        return 8
+    if unique_count <= 16:
+        return 12
+    if unique_count <= 32:
+        return 16
+    if unique_count <= 96:
+        return 24
+    if unique_count <= 192:
+        return 32
+    return 48
+
+
+def quantize_rgb(rgb: tuple[int, int, int]) -> tuple[int, int, int]:
+    return tuple(channel // 32 for channel in rgb)
 
 
 def detect_pixel_block_size(image: Image.Image) -> tuple[int, int, float] | None:

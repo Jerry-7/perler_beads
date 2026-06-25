@@ -322,7 +322,7 @@ def image_edits_url(base_url: str) -> str:
     trimmed = base_url.rstrip("/")
     if trimmed.endswith("/v1/images/edits"):
         return trimmed
-    return f"{trimmed}/v1/images/edits"
+    return f"{trimmed}/v1/images"
 
 
 def image_edit_form_data(config: AiPixelArtProviderConfig, prompt: str) -> dict[str, str]:

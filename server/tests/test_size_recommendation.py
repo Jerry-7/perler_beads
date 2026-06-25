@@ -70,6 +70,7 @@ def test_recommendation_api_returns_scaled_image_size() -> None:
     assert body["sourceHeight"] == 150
     assert body["widthCells"] == 102
     assert body["heightCells"] == 51
+    assert 4 <= body["recommendedColors"] <= 64
 
 
 def test_detects_scaled_pixel_block_size_from_image() -> None:
@@ -90,3 +91,11 @@ def test_falls_back_when_pixel_blocks_are_not_stable() -> None:
     assert recommendation.detectedBlockWidth is None
     assert recommendation.detectedBlockHeight is None
     assert recommendation.confidence == 0
+
+
+def test_recommends_more_colors_for_colorful_images() -> None:
+    flat = recommend_pattern_size_from_image(make_image(64, 64))
+    colorful = recommend_pattern_size_from_image(make_gradient_image(64, 64))
+
+    assert flat.recommendedColors == 4
+    assert colorful.recommendedColors > flat.recommendedColors

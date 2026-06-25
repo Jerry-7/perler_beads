@@ -104,7 +104,11 @@ def test_health_reports_supported_sampling_modes() -> None:
     response = client.get("/api/health")
 
     assert response.status_code == 200
+    assert "coverage" in response.json()["samplingModes"]
     assert "center-shrink" in response.json()["samplingModes"]
+    assert "grid-scan" in response.json()["samplingModes"]
+    assert "ultra-small" in response.json()["samplingModes"]
+    assert "line-art" in response.json()["samplingModes"]
 
 
 def test_create_ai_image_and_fetch_generated_image(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -359,9 +363,9 @@ def test_create_generation_accepts_raw_sampling_mode() -> None:
     result_response = client.get(f"/api/generations/{generation_id}")
     body = result_response.json()
 
-    assert body["result"]["usage"] == []
+    assert body["result"]["usage"]
     assert "sourceRgb" in body["result"]["cells"][0][0]
-    assert "beadCode" not in body["result"]["cells"][0][0]
+    assert "beadCode" in body["result"]["cells"][0][0]
 
 
 def test_create_generation_accepts_center_shrink_sampling_mode() -> None:
@@ -372,6 +376,77 @@ def test_create_generation_accepts_center_shrink_sampling_mode() -> None:
     )
 
     assert response.status_code == 200
+
+
+def test_create_generation_accepts_coverage_sampling_mode() -> None:
+    response = client.post(
+        "/api/generations",
+        data={"widthCells": "4", "heightCells": "4", "sourceMode": "resample", "samplingMode": "coverage"},
+        files={"image": ("test.png", make_image(), "image/png")},
+    )
+
+    assert response.status_code == 200
+    generation_id = response.json()["generationId"]
+    result_response = client.get(f"/api/generations/{generation_id}")
+    body = result_response.json()
+
+    assert body["result"]["widthCells"] == 4
+    assert body["result"]["heightCells"] == 4
+    assert body["result"]["usage"]
+
+
+def test_create_generation_accepts_ultra_small_sampling_mode() -> None:
+    response = client.post(
+        "/api/generations",
+        data={"widthCells": "16", "heightCells": "16", "sourceMode": "resample", "samplingMode": "ultra-small"},
+        files={"image": ("test.png", make_image(), "image/png")},
+    )
+
+    assert response.status_code == 200
+    generation_id = response.json()["generationId"]
+    result_response = client.get(f"/api/generations/{generation_id}")
+    body = result_response.json()
+
+    assert body["result"]["rleRows"]
+
+
+def test_create_generation_accepts_line_art_sampling_mode() -> None:
+    response = client.post(
+        "/api/generations",
+        data={"widthCells": "4", "heightCells": "4", "sourceMode": "resample", "samplingMode": "line-art"},
+        files={"image": ("test.png", make_image(), "image/png")},
+    )
+
+    assert response.status_code == 200
+
+
+def test_create_generation_accepts_grid_scan_sampling_mode() -> None:
+    cell_size = 7
+    image = Image.new("RGB", (3 * cell_size + 4, 2 * cell_size + 3), (20, 20, 20))
+    for row, rgb_row in enumerate([[(255, 0, 0), (0, 0, 255), (248, 248, 248)], [(0, 220, 0), (255, 0, 0), (0, 0, 255)]]):
+        for col, rgb in enumerate(rgb_row):
+            left = 1 + col * (cell_size + 1)
+            top = 1 + row * (cell_size + 1)
+            for y in range(top, top + cell_size):
+                for x in range(left, left + cell_size):
+                    image.putpixel((x, y), rgb)
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+
+    response = client.post(
+        "/api/generations",
+        data={"widthCells": "1", "heightCells": "1", "sourceMode": "resample", "samplingMode": "grid-scan"},
+        files={"image": ("grid.png", buffer.getvalue(), "image/png")},
+    )
+
+    assert response.status_code == 200
+    generation_id = response.json()["generationId"]
+    result_response = client.get(f"/api/generations/{generation_id}")
+    body = result_response.json()
+
+    assert body["result"]["widthCells"] == 3
+    assert body["result"]["heightCells"] == 2
+    assert any(cell.get("empty") for row in body["result"]["cells"] for cell in row)
 
 
 def test_pattern_debug_analyze_reports_detected_and_compressed_grids() -> None:

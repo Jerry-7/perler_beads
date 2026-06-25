@@ -81,6 +81,31 @@ def make_center_shrink_image() -> bytes:
     return buffer.getvalue()
 
 
+def make_line_art_image() -> bytes:
+    image = Image.new("RGB", (20, 20), (246, 246, 246))
+    for index in range(20):
+        image.putpixel((index, index), (12, 12, 12))
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def make_colored_sketch_image() -> bytes:
+    image = Image.new("RGB", (20, 20), (246, 246, 246))
+    for y in range(2, 10):
+        for x in range(2, 10):
+            image.putpixel((x, y), (245, 30, 30))
+    for y in range(2, 10):
+        image.putpixel((2, y), (8, 8, 8))
+        image.putpixel((9, y), (8, 8, 8))
+    for x in range(2, 10):
+        image.putpixel((x, 2), (8, 8, 8))
+        image.putpixel((x, 9), (8, 8, 8))
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
 def test_resample_preserves_dominant_region_color_at_boundaries() -> None:
     provider = MockPixelArtProvider()
 
@@ -201,6 +226,64 @@ def test_raw_mapping_preserves_dark_outline_when_threshold_is_met() -> None:
     assert cells[0][0].rgb == (10, 10, 10)
 
 
+def test_coverage_sampling_uses_quantized_color_coverage() -> None:
+    image = Image.new("RGB", (4, 4), (0, 0, 255))
+    red_variants = [(250, 10, 10), (245, 15, 15), (240, 20, 20), (235, 25, 25)]
+    for index, (x, y) in enumerate((x, y) for y in range(3) for x in range(3)):
+        image.putpixel((x, y), red_variants[index % len(red_variants)])
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    provider = MockPixelArtProvider()
+
+    cells = provider.convert(
+        image_bytes=buffer.getvalue(),
+        width_cells=1,
+        height_cells=1,
+        source_mode="resample",
+        sampling_mode="coverage",
+    )
+
+    assert cells[0][0].rgb == (243, 17, 17)
+
+
+def test_coverage_sampling_respects_fractional_source_overlap() -> None:
+    image = Image.new("RGB", (3, 1), (0, 0, 255))
+    image.putpixel((0, 0), (255, 0, 0))
+    image.putpixel((2, 0), (255, 0, 0))
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    provider = MockPixelArtProvider()
+
+    cells = provider.convert(
+        image_bytes=buffer.getvalue(),
+        width_cells=2,
+        height_cells=1,
+        source_mode="resample",
+        sampling_mode="coverage",
+    )
+
+    assert [cell.rgb for cell in cells[0]] == [(255, 0, 0), (255, 0, 0)]
+
+
+def test_coverage_sampling_preserves_dark_outline_when_threshold_is_met() -> None:
+    image = Image.new("RGB", (4, 4), (240, 240, 240))
+    for x, y in [(0, 0), (1, 0), (2, 0), (3, 0), (0, 1)]:
+        image.putpixel((x, y), (10, 10, 10))
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    provider = MockPixelArtProvider()
+
+    cells = provider.convert(
+        image_bytes=buffer.getvalue(),
+        width_cells=1,
+        height_cells=1,
+        source_mode="resample",
+        sampling_mode="coverage",
+    )
+
+    assert cells[0][0].rgb == (10, 10, 10)
+
+
 def test_original_grid_pipeline_uses_consistent_result_for_legacy_modes() -> None:
     provider = MockPixelArtProvider()
 
@@ -296,14 +379,14 @@ def test_resample_mode_fills_requested_dimensions_without_letterbox() -> None:
     assert usage_count == 100
 
 
-def test_raw_sampling_returns_source_colors_without_palette_matching() -> None:
+def test_raw_sampling_maps_source_colors_to_bead_codes() -> None:
     store = GenerationStore()
 
     generation = store.create(
         image_bytes=make_image(1, 1, (123, 45, 67)),
         width_cells=1,
         height_cells=1,
-        palette=[PaletteColor(code="A", name="A", rgb=(0, 0, 0))],
+        palette=[PaletteColor(code="A", name="A", rgb=(0, 0, 0)), PaletteColor(code="B", name="B", rgb=(123, 45, 67))],
         source_mode="resample",
         sampling_mode="raw",
         color_complexity=ColorSimplificationProfile.ORIGINAL,
@@ -313,18 +396,20 @@ def test_raw_sampling_returns_source_colors_without_palette_matching() -> None:
     assert generation.result is not None
     cell = generation.result.cells[0][0]
     assert cell.sourceRgb == (123, 45, 67)
-    assert not hasattr(cell, "beadCode")
-    assert generation.result.usage == []
+    assert cell.beadCode == "B"
+    assert cell.beadName == "B"
+    assert cell.beadRgb == (123, 45, 67)
+    assert [item.beadCode for item in generation.result.usage] == ["B"]
 
 
-def test_nearest_sampling_returns_source_colors_without_palette_matching() -> None:
+def test_nearest_sampling_maps_source_colors_to_bead_codes() -> None:
     store = GenerationStore()
 
     generation = store.create(
         image_bytes=make_image(1, 1, (123, 45, 67)),
         width_cells=1,
         height_cells=1,
-        palette=[PaletteColor(code="A", name="A", rgb=(0, 0, 0))],
+        palette=[PaletteColor(code="A", name="A", rgb=(0, 0, 0)), PaletteColor(code="B", name="B", rgb=(123, 45, 67))],
         source_mode="resample",
         sampling_mode="nearest",
         color_complexity=ColorSimplificationProfile.ORIGINAL,
@@ -334,8 +419,10 @@ def test_nearest_sampling_returns_source_colors_without_palette_matching() -> No
     assert generation.result is not None
     cell = generation.result.cells[0][0]
     assert cell.sourceRgb == (123, 45, 67)
-    assert not hasattr(cell, "beadCode")
-    assert generation.result.usage == []
+    assert cell.beadCode == "B"
+    assert cell.beadName == "B"
+    assert cell.beadRgb == (123, 45, 67)
+    assert [item.beadCode for item in generation.result.usage] == ["B"]
 
 
 def test_generation_simplifies_low_usage_similar_bead_colors() -> None:
@@ -517,6 +604,59 @@ def test_generation_limits_usage_to_max_colors() -> None:
     assert len(generation.result.usage) <= 2
 
 
+def test_small_nearest_generation_respects_user_size_and_max_colors_without_ultra_small_clamp() -> None:
+    class ColorfulProvider:
+        def convert(
+            self,
+            image_bytes: bytes,
+            width_cells: int,
+            height_cells: int,
+            source_mode: str = "auto",
+            ai_detail: str = "balanced",
+            ai_style: str = "faithful",
+            ai_effect_3d: str = "balanced",
+            ai_shading: str = "step",
+            ai_max_colors: int = 16,
+            sampling_mode: str = "dominant",
+        ) -> list[list[PixelArtCell]]:
+            return [
+                [
+                    PixelArtCell(
+                        x=x,
+                        y=y,
+                        rgb=((x * 17 + y * 11) % 256, (x * 29 + y * 7) % 256, (x * 5 + y * 37) % 256),
+                    )
+                    for x in range(width_cells)
+                ]
+                for y in range(height_cells)
+            ]
+
+    palette = [
+        PaletteColor(code=f"C{index:02d}", name=f"Color {index}", rgb=((index * 17) % 256, (index * 31) % 256, (index * 47) % 256))
+        for index in range(24)
+    ]
+    store = GenerationStore(provider=ColorfulProvider())
+
+    generation = store.create(
+        image_bytes=b"unused",
+        width_cells=16,
+        height_cells=16,
+        palette=palette,
+        source_mode="resample",
+        sampling_mode="nearest",
+        color_complexity=ColorSimplificationProfile.ORIGINAL,
+        max_colors=24,
+    )
+
+    assert generation.result is not None
+    assert generation.result.widthCells == 16
+    assert generation.result.heightCells == 16
+    assert len(generation.result.cells) == 16
+    assert len(generation.result.cells[0]) == 16
+    assert len(generation.result.usage) > 8
+    assert len(generation.result.usage) <= 24
+
+
 def test_center_shrink_generation_quantizes_before_palette_mapping() -> None:
     image = Image.new("RGB", (4, 1))
     for x, rgb in enumerate([(250, 10, 10), (230, 20, 20), (10, 10, 250), (20, 20, 230)]):
@@ -542,6 +682,65 @@ def test_center_shrink_generation_quantizes_before_palette_mapping() -> None:
     assert generation.result is not None
     assert [item.beadCode for item in generation.result.usage] == ["BLUE", "RED"]
     assert [item.count for item in generation.result.usage] == [2, 2]
+
+
+def test_line_art_generation_outputs_black_beads_and_empty_background() -> None:
+    palette = [
+        PaletteColor(code="S01", name="纯黑", rgb=(0, 0, 0)),
+        PaletteColor(code="S02", name="纯白", rgb=(255, 255, 255)),
+    ]
+    store = GenerationStore()
+
+    generation = store.create(
+        image_bytes=make_line_art_image(),
+        width_cells=10,
+        height_cells=10,
+        palette=palette,
+        source_mode="resample",
+        sampling_mode="line-art",
+        color_complexity=ColorSimplificationProfile.ORIGINAL,
+        max_colors=16,
+    )
+
+    assert generation.result is not None
+    cells = generation.result.cells
+    bead_cells = [cell for row in cells for cell in row if hasattr(cell, "beadCode")]
+    empty_cells = [cell for row in cells for cell in row if getattr(cell, "empty", False)]
+
+    assert bead_cells
+    assert empty_cells
+    assert {cell.beadCode for cell in bead_cells} == {"S01"}
+    assert generation.result.usage[0].beadCode == "S01"
+    assert generation.result.rleRows is not None
+
+
+def test_line_art_generation_keeps_colored_sketch_fills() -> None:
+    palette = [
+        PaletteColor(code="S01", name="纯黑", rgb=(0, 0, 0)),
+        PaletteColor(code="RED", name="红色", rgb=(255, 0, 0)),
+        PaletteColor(code="WHITE", name="白色", rgb=(255, 255, 255)),
+    ]
+    store = GenerationStore()
+
+    generation = store.create(
+        image_bytes=make_colored_sketch_image(),
+        width_cells=10,
+        height_cells=10,
+        palette=palette,
+        source_mode="resample",
+        sampling_mode="line-art",
+        color_complexity=ColorSimplificationProfile.ORIGINAL,
+        max_colors=16,
+    )
+
+    assert generation.result is not None
+    bead_codes = {cell.beadCode for row in generation.result.cells for cell in row if hasattr(cell, "beadCode")}
+    empty_count = sum(1 for row in generation.result.cells for cell in row if getattr(cell, "empty", False))
+
+    assert "S01" in bead_codes
+    assert "RED" in bead_codes
+    assert "WHITE" not in bead_codes
+    assert empty_count > 0
 
 
 def test_encode_rows_as_rle_compresses_horizontal_runs() -> None:

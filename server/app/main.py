@@ -14,7 +14,7 @@ from app.services.size_recommendation import SizeRecommendationError, recommend_
 AI_STYLE_OPTIONS = {"faithful", "iconic", "crafted", "dramatic"}
 AI_EFFECT_3D_OPTIONS = {"none", "subtle", "balanced", "strong"}
 AI_SHADING_OPTIONS = {"flat", "step", "dithered"}
-SAMPLING_MODE_OPTIONS = {"raw", "edge", "dominant", "detail", "smooth", "nearest", "center-shrink"}
+SAMPLING_MODE_OPTIONS = {"raw", "edge", "dominant", "detail", "smooth", "nearest", "coverage", "center-shrink", "grid-scan", "ultra-small", "line-art"}
 LOGGER = logging.getLogger(__name__)
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
@@ -63,7 +63,7 @@ def validate_generation_controls(width_cells: int, height_cells: int, source_mod
     if source_mode not in {"auto", "pixel-art", "resample"}:
         raise HTTPException(status_code=400, detail="sourceMode must be auto, pixel-art, or resample")
     if sampling_mode not in SAMPLING_MODE_OPTIONS:
-        raise HTTPException(status_code=400, detail="samplingMode must be raw, edge, dominant, detail, smooth, nearest, or center-shrink")
+        raise HTTPException(status_code=400, detail="samplingMode must be raw, edge, dominant, detail, smooth, nearest, coverage, center-shrink, grid-scan, ultra-small, or line-art")
 
 
 def validate_ai_controls(ai_detail: str, ai_style: str, ai_effect_3d: str, ai_shading: str, ai_max_colors: int) -> None:

@@ -5,11 +5,14 @@ from uuid import uuid4
 
 from app.color_matching import PaletteEmptyError, find_nearest_color
 from app.color_matching import rgb_distance
-from app.models import BeadCell, BeadUsage, PaletteColor, PatternResult, PixelCell, RawColorCell
+from app.models import BeadCell, BeadUsage, PaletteColor, PatternResult, PixelCell
 from app.palette import PALETTE_VERSION
 from app.providers.base import PixelArtCell, PixelArtProvider
 from app.providers.mock_pixel_art import MockPixelArtProvider, PixelArtProviderError
 from app.services.color_simplification import ColorSimplificationProfile, simplify_low_usage_similar_colors
+from app.services.grid_scan_pattern import GridScanPatternError, process_grid_scan_bead_pattern
+from app.services.line_art_pattern import LineArtPatternError, process_line_art_bead_pattern
+from app.services.ultra_small_pattern import UltraSmallPatternError, process_ultra_small_bead_pattern
 
 
 class GenerationError(ValueError):
@@ -55,7 +58,7 @@ class GenerationStore:
                 max_colors,
             )
             generation.status = "completed"
-        except (PaletteEmptyError, PixelArtProviderError) as exc:
+        except (PaletteEmptyError, PixelArtProviderError, UltraSmallPatternError, LineArtPatternError, GridScanPatternError) as exc:
             generation.status = "failed"
             generation.error = str(exc)
             raise GenerationError(str(exc)) from exc
@@ -76,6 +79,29 @@ class GenerationStore:
         sampling_mode: str,
         max_colors: int,
     ) -> PatternResult:
+        if sampling_mode == "grid-scan":
+            return process_grid_scan_bead_pattern(
+                image_bytes=image_bytes,
+                bead_palette=palette,
+                target_width=width_cells,
+                target_height=height_cells,
+            )
+        if sampling_mode == "ultra-small":
+            return process_ultra_small_bead_pattern(
+                image_bytes=image_bytes,
+                target_width=width_cells,
+                target_height=height_cells,
+                max_colors=max_colors,
+                bead_palette=palette,
+            )
+        if sampling_mode == "line-art":
+            return process_line_art_bead_pattern(
+                image_bytes=image_bytes,
+                target_width=width_cells,
+                target_height=height_cells,
+                bead_palette=palette,
+            )
+
         pixel_matrix = self._get_provider().convert(
             image_bytes=image_bytes,
             width_cells=width_cells,
@@ -83,10 +109,6 @@ class GenerationStore:
             source_mode=source_mode,
             sampling_mode=sampling_mode,
         )
-        if sampling_mode in {"raw", "nearest"}:
-            return self._generate_raw_color_result(pixel_matrix, width_cells, height_cells)
-        if sampling_mode == "center-shrink":
-            pixel_matrix = quantize_pixel_matrix(pixel_matrix, max_colors)
 
         rows: list[list[PixelCell | BeadCell]] = []
 
@@ -113,6 +135,7 @@ class GenerationStore:
 
         rows = simplify_low_usage_similar_colors(rows, profile=color_complexity)
         rows = limit_bead_colors(rows, max_colors)
+        rle_rows = encode_pattern_rows_as_rle(rows)
         usage_counter: Counter[str] = Counter()
         usage_colors: dict[str, BeadCell] = {}
         for row in rows:
@@ -138,31 +161,7 @@ class GenerationStore:
             cells=rows,
             usage=usage,
             generatedAt=datetime.now(UTC).isoformat(),
-        )
-
-    def _generate_raw_color_result(
-        self,
-        pixel_matrix: list[list],
-        width_cells: int,
-        height_cells: int,
-    ) -> PatternResult:
-        rows: list[list[PixelCell | RawColorCell]] = []
-        for pixel_row in pixel_matrix:
-            row: list[PixelCell | RawColorCell] = []
-            for pixel in pixel_row:
-                if pixel.empty or pixel.rgb is None:
-                    row.append(PixelCell(x=pixel.x, y=pixel.y))
-                else:
-                    row.append(RawColorCell(x=pixel.x, y=pixel.y, sourceRgb=pixel.rgb))
-            rows.append(row)
-
-        return PatternResult(
-            widthCells=width_cells,
-            heightCells=height_cells,
-            paletteVersion="source-rgb",
-            cells=rows,
-            usage=[],
-            generatedAt=datetime.now(UTC).isoformat(),
+            rleRows=rle_rows,
         )
 
     def _get_provider(self) -> PixelArtProvider:
@@ -274,3 +273,32 @@ def average_rgb(colors: list[tuple[int, int, int]]) -> tuple[int, int, int]:
 
 def luminance(rgb: tuple[int, int, int]) -> float:
     return 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]
+
+
+def encode_pattern_rows_as_rle(rows: list[list[PixelCell | BeadCell]]) -> list[str]:
+    encoded_rows: list[str] = []
+    for row in rows:
+        if not row:
+            encoded_rows.append("")
+            continue
+
+        runs: list[str] = []
+        current = pattern_cell_code(row[0])
+        count = 1
+        for cell in row[1:]:
+            code = pattern_cell_code(cell)
+            if code == current:
+                count += 1
+                continue
+            runs.append(f"{current}:{count}")
+            current = code
+            count = 1
+        runs.append(f"{current}:{count}")
+        encoded_rows.append(",".join(runs))
+    return encoded_rows
+
+
+def pattern_cell_code(cell: PixelCell | BeadCell) -> str:
+    if isinstance(cell, BeadCell):
+        return cell.beadCode
+    return "EMPTY"
