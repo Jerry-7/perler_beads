@@ -64,6 +64,7 @@
   position: absolute;
   right: 24rpx;
   bottom: 24rpx;
+  min-height: 68rpx;
   margin: 0;
   padding: 0 28rpx;
   border: 4rpx solid #333333;

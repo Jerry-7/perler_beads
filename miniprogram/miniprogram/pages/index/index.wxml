@@ -1,146 +1,49 @@
 <view class="maker-page">
   <view class="maker-hero">
     <view class="hero-copy">
-      <text class="hero-kicker">制作工具</text>
-      <text class="hero-title">照片变拼豆图纸</text>
-      <text class="hero-subtitle">选择图片，调整尺寸和颜色复杂度</text>
+      <text class="hero-kicker">制作</text>
+      <text class="hero-title">图片转拼豆图纸</text>
+      <text class="hero-subtitle">可以先用 AI 生图，也可以直接上传图片生成图纸。</text>
     </view>
-    <button class="hero-button" bindtap="chooseImage">{{imagePath ? "重新选图" : "选择图片"}}</button>
   </view>
 
-  <view class="panel upload-panel">
-    <view class="panel-heading">
-      <text class="panel-title">图片预览</text>
-      <text class="panel-badge">{{imagePath ? "已选择" : "待选择"}}</text>
+  <view wx:if="{{activeTool === 'home'}}" class="feature-grid">
+    <view class="panel-heading feature-heading">
+      <text class="panel-title">开始</text>
+      <text class="panel-badge">选择方式</text>
     </view>
+    <view class="feature-card" bindtap="openAiTool">
+      <text class="feature-title">AI 生图</text>
+      <text class="feature-desc">先生成更适合拼豆的图片。</text>
+      <button class="secondary-button panel-action-button">进入</button>
+    </view>
+    <view class="feature-card" bindtap="openPatternTool">
+      <text class="feature-title">生成图纸</text>
+      <text class="feature-desc">上传图片后设置尺寸、颜色和图纸效果。</text>
+      <button class="secondary-button panel-action-button">进入</button>
+    </view>
+  </view>
+
+  <view wx:if="{{activeTool === 'ai'}}" class="panel control-panel">
+    <view class="panel-heading">
+      <text class="panel-title">AI 生图设置</text>
+      <button class="link-button" size="mini" bindtap="backToToolHome">返回</button>
+    </view>
+
     <view class="preview {{imagePath ? 'has-image' : ''}}" bindtap="chooseImage">
       <image wx:if="{{imagePath}}" class="preview-image" src="{{imagePath}}" mode="aspectFit" />
       <view wx:else class="empty-preview">
         <text class="empty-icon">+</text>
-        <text class="empty-text">点击添加照片</text>
-      </view>
-    </view>
-    <view wx:if="{{isRecommendingSize || sizeRecommendationText}}" class="hint-strip">
-      <text wx:if="{{isRecommendingSize}}">正在计算推荐格数...</text>
-      <text wx:else>{{sizeRecommendationText}}</text>
-    </view>
-  </view>
-
-  <view class="panel control-panel">
-    <view class="panel-heading">
-      <text class="panel-title">公共参数</text>
-      <text class="panel-badge">最多 {{aiMaxColors || 16}} 色</text>
-    </view>
-
-    <label class="field">
-      <text class="field-label">最大颜色数（4-64）</text>
-      <input type="number" value="{{aiMaxColors}}" bindinput="onAiMaxColorsInput" />
-    </label>
-  </view>
-
-  <view class="panel control-panel">
-    <view class="panel-heading">
-      <text class="panel-title">图纸参数</text>
-      <text class="panel-badge">{{widthCells}} x {{heightCells}}</text>
-    </view>
-
-    <label class="field">
-      <text class="field-label">AI生成精细度</text>
-      <picker mode="selector" range="{{aiDetailOptions}}" range-key="label" value="{{aiDetailIndex}}" bindchange="onAiDetailChange">
-        <view class="picker-field">
-          <text>{{aiDetailOptions[aiDetailIndex].label}}</text>
-          <text class="picker-arrow">▼</text>
-        </view>
-      </picker>
-    </label>
-
-    <label class="field">
-      <text class="field-label">生图取向</text>
-      <picker mode="selector" range="{{aiStyleOptions}}" range-key="label" value="{{aiStyleIndex}}" bindchange="onAiStyleChange">
-        <view class="picker-field">
-          <text>{{aiStyleOptions[aiStyleIndex].label}}</text>
-          <text class="picker-arrow">▼</text>
-        </view>
-      </picker>
-    </label>
-
-    <view class="form-grid">
-      <label class="field">
-        <text class="field-label">3D效果</text>
-        <picker mode="selector" range="{{aiEffect3dOptions}}" range-key="label" value="{{aiEffect3dIndex}}" bindchange="onAiEffect3dChange">
-          <view class="picker-field">
-            <text>{{aiEffect3dOptions[aiEffect3dIndex].label}}</text>
-            <text class="picker-arrow">▼</text>
-          </view>
-        </picker>
-      </label>
-      <label class="field">
-        <text class="field-label">阴影方式</text>
-        <picker mode="selector" range="{{aiShadingOptions}}" range-key="label" value="{{aiShadingIndex}}" bindchange="onAiShadingChange">
-          <view class="picker-field">
-            <text>{{aiShadingOptions[aiShadingIndex].label}}</text>
-            <text class="picker-arrow">▼</text>
-          </view>
-        </picker>
-      </label>
-    </view>
-
-    <button class="generate-button" loading="{{isGeneratingAiImage}}" disabled="{{!canGenerate || isGeneratingAiImage}}" bindtap="generateAiImage">
-      {{aiImageId ? "重新生成 AI 图" : "生成 AI 预览图"}}
-    </button>
-
-    <view wx:if="{{isGeneratingAiImage || aiImageProgress}}" class="progress-block">
-      <view class="progress-track">
-        <view class="progress-fill" style="width: {{aiImageProgress}}%;"></view>
-      </view>
-      <text class="progress-text">{{aiImageProgressText}} {{aiImageProgress}}%</text>
-    </view>
-  </view>
-
-  <view wx:if="{{aiImagePath}}" class="panel upload-panel">
-    <view class="panel-heading">
-      <text class="panel-title">AI 预览图</text>
-      <text class="panel-badge">可图纸化</text>
-    </view>
-    <view class="preview has-image">
-      <image class="preview-image" src="{{aiImagePath}}" mode="aspectFit" />
-    </view>
-    <button class="secondary-button panel-action-button" bindtap="saveAiImageToAlbum">保存到相册</button>
-  </view>
-
-  <view class="panel control-panel">
-    <view class="panel-heading">
-      <text class="panel-title">图纸调整</text>
-      <text class="panel-badge">{{patternSource === "ai" ? (aiImageId ? "AI 图已就绪" : "先生成 AI 图") : (imagePath ? "原图已就绪" : "先选择图片")}}</text>
-    </view>
-    <view class="hint-strip">图纸最多保留 {{aiMaxColors || 16}} 种颜色，会影响最终拼豆色号数量。</view>
-
-    <view class="field">
-      <text class="field-label">图纸来源</text>
-      <view class="source-switch">
-        <button
-          class="source-option {{patternSource === 'original' ? 'active' : ''}}"
-          size="mini"
-          bindtap="selectOriginalPatternSource"
-        >
-          原上传图
-        </button>
-        <button
-          class="source-option {{patternSource === 'ai' ? 'active' : ''}}"
-          size="mini"
-          bindtap="selectAiPatternSource"
-        >
-          AI 预览图
-        </button>
+        <text class="empty-text">上传图片</text>
       </view>
     </view>
 
     <label class="field">
-      <text class="field-label">目标尺寸</text>
+      <text class="field-label">预选图纸尺寸</text>
       <picker mode="selector" range="{{patternSizeOptions}}" range-key="label" value="{{patternSizeIndex}}" bindchange="onPatternSizeChange">
         <view class="picker-field">
           <text>{{patternSizeOptions[patternSizeIndex].label}}</text>
-          <text class="picker-arrow">▼</text>
+          <text class="picker-arrow">v</text>
         </view>
       </picker>
     </label>
@@ -157,111 +60,355 @@
     </view>
 
     <label class="field">
-      <text class="field-label">图纸效果</text>
-      <picker mode="selector" range="{{samplingModeOptions}}" range-key="label" value="{{samplingModeIndex}}" bindchange="onSamplingModeChange">
+      <text class="field-label">AI 精细度</text>
+      <picker mode="selector" range="{{aiDetailOptions}}" range-key="label" value="{{aiDetailIndex}}" bindchange="onAiDetailChange">
         <view class="picker-field">
-          <text>{{samplingModeOptions[samplingModeIndex].label}}</text>
-          <text class="picker-arrow">▼</text>
+          <text>{{aiDetailOptions[aiDetailIndex].label}}</text>
+          <text class="picker-arrow">v</text>
         </view>
       </picker>
     </label>
+
+    <label class="field">
+      <text class="field-label">生图取向</text>
+      <picker mode="selector" range="{{aiStyleOptions}}" range-key="label" value="{{aiStyleIndex}}" bindchange="onAiStyleChange">
+        <view class="picker-field">
+          <text>{{aiStyleOptions[aiStyleIndex].label}}</text>
+          <text class="picker-arrow">v</text>
+        </view>
+      </picker>
+    </label>
+
+    <view class="form-grid">
+      <label class="field">
+        <text class="field-label">3D 效果</text>
+        <picker mode="selector" range="{{aiEffect3dOptions}}" range-key="label" value="{{aiEffect3dIndex}}" bindchange="onAiEffect3dChange">
+          <view class="picker-field">
+            <text>{{aiEffect3dOptions[aiEffect3dIndex].label}}</text>
+            <text class="picker-arrow">v</text>
+          </view>
+        </picker>
+      </label>
+      <label class="field">
+        <text class="field-label">阴影方式</text>
+        <picker mode="selector" range="{{aiShadingOptions}}" range-key="label" value="{{aiShadingIndex}}" bindchange="onAiShadingChange">
+          <view class="picker-field">
+            <text>{{aiShadingOptions[aiShadingIndex].label}}</text>
+            <text class="picker-arrow">v</text>
+          </view>
+        </picker>
+      </label>
+    </view>
+
+    <button class="generate-button" loading="{{isGeneratingAiImage}}" disabled="{{!imagePath || isGeneratingAiImage}}" bindtap="generateAiImage">
+      <text wx:if="{{aiImageId}}">重新生成 AI 图</text>
+      <text wx:else>生成 AI 图</text>
+    </button>
+
+    <view wx:if="{{isGeneratingAiImage || aiImageProgress}}" class="progress-block">
+      <view class="progress-track">
+        <view class="progress-fill" style="width: {{aiImageProgress}}%;"></view>
+      </view>
+      <text class="progress-text">{{aiImageProgressText}} {{aiImageProgress}}%</text>
+    </view>
+  </view>
+
+  <view wx:if="{{activeTool === 'ai' && aiImagePath}}" class="panel upload-panel">
+    <view class="panel-heading">
+      <text class="panel-title">AI 结果</text>
+      <text class="panel-badge">已生成</text>
+    </view>
+    <view class="preview has-image">
+      <image class="preview-image" src="{{aiImagePath}}" mode="aspectFit" />
+    </view>
+    <button class="secondary-button panel-action-button" bindtap="saveAiImageToAlbum">保存到相册</button>
+    <button class="generate-button" bindtap="useAiImageForPattern">用这张图生成图纸</button>
+  </view>
+
+  <view wx:if="{{activeTool === 'pattern'}}" class="panel control-panel">
+    <view class="panel-heading">
+      <text class="panel-title">图纸设置</text>
+      <button class="link-button" size="mini" bindtap="backToToolHome">返回</button>
+    </view>
+
+    <view class="preview {{patternSource === 'ai' && aiImagePath || imagePath ? 'has-image' : ''}}" bindtap="chooseImage">
+      <image wx:if="{{patternSource === 'ai' && aiImagePath}}" class="preview-image" src="{{aiImagePath}}" mode="aspectFit" />
+      <image wx:elif="{{imagePath}}" class="preview-image" src="{{imagePath}}" mode="aspectFit" />
+      <view wx:else class="empty-preview">
+        <text class="empty-icon">+</text>
+        <text class="empty-text">上传图片</text>
+      </view>
+    </view>
+
+    <view wx:if="{{isRecommendingSize || sizeRecommendationText}}" class="hint-strip">
+      <text wx:if="{{isRecommendingSize}}">正在计算推荐参数...</text>
+      <text wx:else>{{sizeRecommendationText}}</text>
+    </view>
+
+    <view class="recommend-grid">
+      <view class="recommend-card">
+        <text class="debug-label">推荐尺寸</text>
+        <text class="debug-value">{{recommendedSizeText}}</text>
+      </view>
+      <view class="recommend-card">
+        <text class="debug-label">推荐颜色数</text>
+        <text class="debug-value">{{recommendedColors || '-'}}</text>
+      </view>
+    </view>
+    <button class="secondary-button compact-button" disabled="{{!recommendedWidthCells || !recommendedHeightCells}}" bindtap="applyRecommendedPatternSize">套用推荐</button>
+    <view wx:if="{{patternSizeWarning}}" class="warning-strip">
+      <text>{{patternSizeWarning}}</text>
+    </view>
+
+    <view class="field">
+      <text class="field-label">图片来源</text>
+      <view class="source-switch">
+        <button class="source-option {{patternSource === 'original' ? 'active' : ''}}" size="mini" bindtap="selectOriginalPatternSource">上传</button>
+        <button class="source-option {{patternSource === 'ai' ? 'active' : ''}}" size="mini" bindtap="selectAiPatternSource" disabled="{{!aiImageId}}">AI</button>
+      </view>
+    </view>
+
+    <label class="field">
+      <text class="field-label">目标尺寸</text>
+      <picker mode="selector" range="{{patternSizeOptions}}" range-key="label" value="{{patternSizeIndex}}" bindchange="onPatternSizeChange">
+        <view class="picker-field">
+          <text>{{patternSizeOptions[patternSizeIndex].label}}</text>
+          <text class="picker-arrow">v</text>
+        </view>
+      </picker>
+    </label>
+
+    <view wx:if="{{isCustomSize}}" class="form-grid">
+      <label class="field">
+        <text class="field-label">宽度格数</text>
+        <input type="number" value="{{widthCells}}" bindinput="onWidthInput" />
+      </label>
+      <label class="field">
+        <text class="field-label">高度格数</text>
+        <input type="number" value="{{heightCells}}" bindinput="onHeightInput" />
+      </label>
+    </view>
 
     <label class="field">
       <text class="field-label">颜色复杂度</text>
       <picker mode="selector" range="{{colorComplexityOptions}}" range-key="label" value="{{colorComplexityIndex}}" bindchange="onColorComplexityChange">
         <view class="picker-field">
           <text>{{colorComplexityOptions[colorComplexityIndex].label}}</text>
-          <text class="picker-arrow">▼</text>
+          <text class="picker-arrow">v</text>
         </view>
       </picker>
     </label>
 
-    <button
-      class="generate-button"
-      loading="{{isGenerating}}"
-      disabled="{{isGenerating || (patternSource === 'ai' ? !aiImageId : !imagePath)}}"
-      bindtap="generatePattern"
-    >
-      生成拼豆图纸
-    </button>
-    <button
-      class="secondary-button"
-      loading="{{isAnalyzingPattern}}"
-      disabled="{{isAnalyzingPattern || !imagePath}}"
-      bindtap="analyzePatternStages"
-    >
-      查看识别过程
-    </button>
-  </view>
+    <label class="field">
+      <text class="field-label">图纸效果</text>
+      <picker mode="selector" range="{{samplingModeOptions}}" range-key="label" value="{{samplingModeIndex}}" bindchange="onSamplingModeChange">
+        <view class="picker-field">
+          <text>{{samplingModeOptions[samplingModeIndex].label}}</text>
+          <text class="picker-arrow">v</text>
+        </view>
+      </picker>
+    </label>
 
-  <view wx:if="{{patternDebug}}" class="panel debug-panel">
-    <view class="panel-heading">
-      <text class="panel-title">识别过程</text>
-      <text class="panel-badge">{{patternDebug.compressedGridWidth}} x {{patternDebug.compressedGridHeight}}</text>
-    </view>
-    <view class="debug-grid">
-      <view class="debug-stat">
-        <text class="debug-label">源图尺寸</text>
-        <text class="debug-value">{{patternDebug.sourceWidth}} x {{patternDebug.sourceHeight}}</text>
-      </view>
-      <view class="debug-stat">
-        <text class="debug-label">识别像素块</text>
-        <text class="debug-value">{{patternDebug.detectedBlockWidth || '-'}} x {{patternDebug.detectedBlockHeight || '-'}}</text>
-      </view>
-      <view class="debug-stat">
-        <text class="debug-label">原始像素格</text>
-        <text class="debug-value">{{patternDebug.detectedGridWidth}} x {{patternDebug.detectedGridHeight}} / {{patternDebug.detectedPixelCount}}</text>
-      </view>
-      <view class="debug-stat">
-        <text class="debug-label">压缩后像素格</text>
-        <text class="debug-value">{{patternDebug.compressedGridWidth}} x {{patternDebug.compressedGridHeight}} / {{patternDebug.compressedPixelCount}}</text>
-      </view>
-    </view>
-    <view class="debug-preview-grid">
-      <view class="debug-preview-card">
-        <text class="debug-label">原始识别图</text>
-        <image class="debug-preview-image" src="{{patternDebug.originalPreviewDataUrl}}" mode="aspectFit" />
-      </view>
-      <view class="debug-preview-card">
-        <text class="debug-label">压缩后图片</text>
-        <image class="debug-preview-image" src="{{patternDebug.compressedPreviewDataUrl}}" mode="aspectFit" />
-      </view>
-    </view>
+    <label class="field">
+      <text class="field-label">最大颜色数 (4-64)</text>
+      <input type="number" value="{{patternMaxColors}}" bindinput="onPatternMaxColorsInput" />
+    </label>
+
+    <button class="generate-button" loading="{{isGenerating}}" disabled="{{isGenerating || (patternSource === 'ai' ? !aiImageId : !imagePath)}}" bindtap="generatePattern">
+      生成图纸
+    </button>
   </view>
 
   <view wx:if="{{result}}" class="panel result-panel">
-    <view class="toolbar">
-      <view class="result-title-group">
-        <text class="panel-title">生成图纸</text>
+    <view class="result-heading">
+      <view>
+        <text class="panel-title">图纸结果</text>
         <text class="result-size">{{result.widthCells}} x {{result.heightCells}}</text>
       </view>
       <view class="actions">
-        <button size="mini" bindtap="previewPattern">预览图纸</button>
-        <button size="mini" bindtap="exportPng">保存到相册</button>
+        <button size="mini" bindtap="toggleTracingMode">
+          <text wx:if="{{isTracingMode}}">退出临摹</text>
+          <text wx:else>临摹模式</text>
+        </button>
+        <button size="mini" bindtap="toggleEditingMode">
+          <text wx:if="{{isEditingMode}}">退出修改</text>
+          <text wx:else>修改图纸</text>
+        </button>
+        <button size="mini" bindtap="previewPattern">预览</button>
+        <button size="mini" bindtap="exportPng">保存</button>
       </view>
     </view>
-    <view class="canvas-frame">
+    <view wx:if="{{isTracingMode}}" class="tracing-bar">
+      <text class="tracing-status">{{traceStatusText}}</text>
+      <label class="trace-mark-switch">
+        <text>标记</text>
+        <switch checked="{{traceMarkEnabled}}" color="#2f6df6" bindchange="toggleTraceMarkEnabled" />
+      </label>
+    </view>
+    <view wx:if="{{isEditingMode}}" class="zoom-bar">
+      <text class="zoom-label">缩放 {{patternZoomText}}</text>
+      <view class="zoom-actions">
+        <button size="mini" bindtap="zoomPatternOut">-</button>
+        <button size="mini" bindtap="resetPatternZoom">100%</button>
+        <button size="mini" bindtap="zoomPatternIn">+</button>
+      </view>
+    </view>
+    <scroll-view wx:if="{{!isEditingMode}}" class="canvas-frame" scroll-x="true" scroll-y="true" enhanced="true" show-scrollbar="true">
       <canvas
         class="pattern-canvas"
         type="2d"
         id="patternCanvas"
         style="width: {{canvasCssWidth}}px; height: {{canvasCssHeight}}px;"
+        bindmousemove="onPatternPointerMove"
+        bindtouchstart="onPatternTouchStart"
+        bindtouchmove="onPatternTouchMove"
+        bindtouchend="onPatternTouchEnd"
+        bindtap="onPatternTap"
+        bindlongpress="onPatternTap"
       ></canvas>
+    </scroll-view>
+
+    <view class="result-meta-grid">
+      <view class="result-meta-card">
+        <text class="result-meta-label">行数</text>
+        <text class="result-meta-value">{{result.heightCells}} 行</text>
+      </view>
+      <view class="result-meta-card">
+        <text class="result-meta-label">列数</text>
+        <text class="result-meta-value">{{result.widthCells}} 列</text>
+      </view>
+      <view class="result-meta-card">
+        <text class="result-meta-label">颜色</text>
+        <text class="result-meta-value">{{usage.length}} 色</text>
+      </view>
+      <view class="result-meta-card">
+        <text class="result-meta-label">豆子</text>
+        <text class="result-meta-value">{{resultBeadCount}} 颗</text>
+      </view>
+    </view>
+
+    <view wx:if="{{usage.length}}" class="result-usage-section">
+      <view class="panel-heading usage-heading">
+        <text class="panel-title">色号统计</text>
+        <text class="panel-badge">{{usage.length}} 色</text>
+      </view>
+      <view class="usage-list">
+        <view wx:for="{{usage}}" wx:key="beadCode" class="usage-row">
+          <view class="swatch" style="background: rgb({{item.beadRgb[0]}}, {{item.beadRgb[1]}}, {{item.beadRgb[2]}});"></view>
+          <text class="usage-code">{{item.beadCode}}</text>
+          <text class="usage-name">{{item.beadName}}</text>
+          <text class="usage-count">{{item.count}}</text>
+        </view>
+      </view>
     </view>
   </view>
 
-  <view wx:if="{{usage.length}}" class="panel usage-panel">
-    <view class="panel-heading">
-      <text class="panel-title">色号统计</text>
-      <text class="panel-badge">{{usage.length}} 色</text>
+  <view wx:if="{{isEditingMode}}" class="pattern-editor-fullscreen" catchwheel="onEditorWheel">
+    <view class="editor-topbar">
+      <view class="editor-title-group">
+        <text class="editor-title">修改图纸</text>
+        <text class="editor-subtitle">{{result.widthCells}} x {{result.heightCells}} - {{editorStatusText}}</text>
+      </view>
+      <button size="mini" class="editor-close" bindtap="toggleEditingMode">完成</button>
     </view>
-    <view class="usage-list">
-      <view wx:for="{{usage}}" wx:key="beadCode" class="usage-row">
-        <view class="swatch" style="background: rgb({{item.beadRgb[0]}}, {{item.beadRgb[1]}}, {{item.beadRgb[2]}});"></view>
-        <text class="usage-code">{{item.beadCode}}</text>
-        <text class="usage-name">{{item.beadName}}</text>
-        <text class="usage-count">{{item.count}}</text>
+
+    <view class="editor-tool-panel">
+      <view class="editor-tool-row">
+        <button size="mini" class="editor-tool {{editorTool === 'pan' ? 'active' : ''}}" data-tool="pan" bindtap="onEditorToolTap">移动</button>
+        <button size="mini" class="editor-tool {{editorTool === 'point' ? 'active' : ''}}" data-tool="point" bindtap="onEditorToolTap">单点</button>
+        <button size="mini" class="editor-tool {{editorTool === 'paint' ? 'active' : ''}}" data-tool="paint" bindtap="onEditorToolTap">连涂</button>
+        <button size="mini" class="editor-tool {{editorTool === 'picker' ? 'active' : ''}}" data-tool="picker" bindtap="onEditorToolTap">吸色</button>
+        <button size="mini" class="editor-tool {{editorTool === 'fill' ? 'active' : ''}}" data-tool="fill" bindtap="onEditorToolTap">填充</button>
+      </view>
+      <view class="editor-tool-row secondary">
+        <button size="mini" class="editor-tool" bindtap="undoEditorChange" disabled="{{!editorUndoCount}}">撤销</button>
+        <button size="mini" class="editor-tool" bindtap="redoEditorChange" disabled="{{!editorRedoCount}}">重做</button>
+        <button size="mini" class="editor-tool" bindtap="editorZoomOut">-</button>
+        <button size="mini" class="editor-tool" bindtap="resetEditorView">{{editorScaleText}}</button>
+        <button size="mini" class="editor-tool" bindtap="editorZoomIn">+</button>
+      </view>
+    </view>
+
+    <view class="editor-canvas-frame" catchwheel="onEditorWheel">
+      <canvas
+        class="editor-pattern-canvas"
+        type="2d"
+        id="editorPatternCanvas"
+        style="width: {{editorCanvasCssWidth}}px; height: {{editorCanvasCssHeight}}px;"
+        disable-scroll="true"
+        catchtouchstart="onEditorCanvasTouchStart"
+        catchtouchmove="onEditorCanvasTouchMove"
+        catchtouchend="onEditorCanvasTouchEnd"
+        catchtouchcancel="onEditorCanvasTouchEnd"
+      ></canvas>
+    </view>
+
+    <view class="editor-color-panel">
+      <view class="edit-popover-head">
+        <view class="edit-title-group">
+          <text class="edit-title">调色盘</text>
+          <text class="edit-current">{{activeEditColorText}}</text>
+        </view>
+        <view class="edit-head-actions">
+          <button size="mini" class="edit-close" bindtap="closeEditPopover">清除</button>
+        </view>
+      </view>
+
+      <view wx:if="{{selectedEditCellText}}" class="edit-batch-status">
+        <text>格子</text>
+        <text>{{selectedEditCellText}}</text>
+      </view>
+
+      <view class="edit-candidate-section">
+        <view class="edit-section-head">
+          <text class="edit-section-title">已用色号</text>
+          <text class="edit-section-note">点击选择，点“高亮”可定位</text>
+        </view>
+        <scroll-view class="edit-candidate-strip" scroll-x="true" enhanced="true" show-scrollbar="false">
+          <button
+            wx:for="{{editCandidateColors}}"
+            wx:key="code"
+            size="mini"
+            class="edit-candidate-chip {{activeEditColor && activeEditColor.code === item.code ? 'active' : ''}}"
+            data-code="{{item.code}}"
+            bindtap="selectActiveEditColor"
+            bindlongpress="highlightUsageColor"
+          >
+            <view class="edit-candidate-swatch" style="background: rgb({{item.rgb[0]}}, {{item.rgb[1]}}, {{item.rgb[2]}});"></view>
+            <view class="edit-candidate-text">
+              <text class="edit-candidate-code">{{item.code}}</text>
+              <text class="edit-candidate-count">{{item.countLabel}}</text>
+              <text class="edit-candidate-focus" catchtap="highlightUsageColor" data-code="{{item.code}}">高亮</text>
+            </view>
+          </button>
+        </scroll-view>
+      </view>
+
+      <view class="edit-palette-dropdown">
+        <button size="mini" class="edit-dropdown-toggle" bindtap="toggleEditPaletteDropdown">
+          <text>引入新颜色</text>
+          <text wx:if="{{editPaletteDropdownOpen}}" class="edit-dropdown-state">收起</text>
+          <text wx:else class="edit-dropdown-state">搜索</text>
+        </button>
+        <view wx:if="{{editPaletteDropdownOpen}}" class="edit-dropdown-list">
+          <input class="edit-search" placeholder="搜索色号或名称" value="{{editSearchQuery}}" bindinput="onEditSearchInput" />
+          <scroll-view class="edit-search-list" scroll-y="true" enhanced="true" show-scrollbar="true">
+            <button
+              wx:for="{{editSearchResults}}"
+              wx:key="code"
+              size="mini"
+              class="edit-search-row"
+              data-code="{{item.code}}"
+              bindtap="selectActiveEditColor"
+            >
+              <view class="edit-swatch" style="background: rgb({{item.rgb[0]}}, {{item.rgb[1]}}, {{item.rgb[2]}});"></view>
+              <text class="edit-search-code">{{item.code}}</text>
+              <text class="edit-search-name">{{item.name}}</text>
+            </button>
+          </scroll-view>
+        </view>
       </view>
     </view>
   </view>
 </view>
+

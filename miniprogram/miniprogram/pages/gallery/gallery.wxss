@@ -31,7 +31,11 @@
 }
 
 .primary {
+  min-height: 72rpx;
   margin: 12rpx 0 0;
+  padding: 0 28rpx;
   color: #ffffff;
   background: #2563eb;
+  font-size: 28rpx;
+  font-weight: 700;
 }
