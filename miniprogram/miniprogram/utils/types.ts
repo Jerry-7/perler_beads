@@ -96,3 +96,52 @@ export function isEmptyCell(cell: PatternCell): cell is EmptyCell {
 export function isBeadCell(cell: PatternCell): cell is BeadCell {
   return "beadRgb" in cell;
 }
+
+export interface UserSummary {
+  openid: string;
+  createdAt: string;
+  lastLoginAt: string;
+}
+
+export interface WechatLoginResponse {
+  sessionToken: string;
+  expiresAt: string;
+  userSummary: UserSummary;
+}
+
+export interface AiPackageOffer {
+  code: string;
+  title: string;
+  amountFen: number;
+  quotaAmount: number;
+}
+
+export interface AiAccessSummary {
+  remainingQuota: number;
+  hasFreeAccess: boolean;
+  freeAccessExpiresAt?: string | null;
+  canGenerateAi: boolean;
+  activePackageOffers: AiPackageOffer[];
+}
+
+export interface AiOrderPaymentParams {
+  timeStamp: string;
+  nonceStr: string;
+  package: string;
+  signType: "RSA";
+  paySign: string;
+}
+
+export interface CreateAiOrderResponse {
+  orderNo: string;
+  packageCode: string;
+  amountFen: number;
+  quotaAmount: number;
+  status: "created" | "paid" | "failed" | "closed";
+  paymentParams: AiOrderPaymentParams;
+}
+
+export interface RedeemAdminCodeResponse {
+  hasFreeAccess: boolean;
+  freeAccessExpiresAt: string;
+}

@@ -1,5 +1,16 @@
 import { API_BASE_URL } from "./config";
-import type { AiImageStatus, GenerationStatus, PaletteColor, PatternDebugAnalysis, PatternSizeRecommendation } from "./types";
+import { authHeader } from "./auth";
+import type {
+  AiAccessSummary,
+  AiImageStatus,
+  AiPackageOffer,
+  CreateAiOrderResponse,
+  GenerationStatus,
+  PaletteColor,
+  PatternDebugAnalysis,
+  PatternSizeRecommendation,
+  RedeemAdminCodeResponse
+} from "./types";
 import type { AiDetail } from "./aiDetailOptions";
 import type { AiEffect3d, AiShading, AiStyle } from "./aiGenerationOptions";
 import { buildAiImageFormData, buildGenerationFormData, type ColorComplexity, type SourceMode } from "./generationFormData";
@@ -12,16 +23,24 @@ interface PaletteResponse {
 
 export type { ColorComplexity, SourceMode } from "./generationFormData";
 
-function request<T>(options: WechatMiniprogram.RequestOption): Promise<T> {
+function mergeHeaders(base?: WechatMiniprogram.IAnyObject, withAuth = false): WechatMiniprogram.IAnyObject {
+  return {
+    ...(base || {}),
+    ...(withAuth ? authHeader() : {})
+  };
+}
+
+function request<T>(options: WechatMiniprogram.RequestOption, withAuth = false): Promise<T> {
   return new Promise((resolve, reject) => {
     wx.request({
       ...options,
+      header: mergeHeaders(options.header as WechatMiniprogram.IAnyObject | undefined, withAuth),
       success(response) {
         if (response.statusCode >= 200 && response.statusCode < 300) {
           resolve(response.data as T);
           return;
         }
-        reject(new Error(`请求失败：${response.statusCode}`));
+        reject(new Error(errorMessageFromRequestResponse(response, "请求失败")));
       },
       fail(error) {
         reject(new Error(error.errMsg));
@@ -30,11 +49,54 @@ function request<T>(options: WechatMiniprogram.RequestOption): Promise<T> {
   });
 }
 
+function errorMessageFromRequestResponse(response: WechatMiniprogram.RequestSuccessCallbackResult, fallback: string): string {
+  const data = response.data as { detail?: string } | string | undefined;
+  if (typeof data === "object" && data && typeof data.detail === "string") {
+    return data.detail;
+  }
+  return `${fallback}，状态码 ${response.statusCode}`;
+}
+
+function errorMessageFromUploadResponse(response: WechatMiniprogram.UploadFileSuccessCallbackResult, fallback: string): string {
+  try {
+    const parsed = JSON.parse(response.data) as { detail?: string };
+    if (parsed.detail) {
+      return parsed.detail;
+    }
+  } catch {
+    // Keep the status-code fallback when the backend response is not JSON.
+  }
+  return `${fallback}，状态码 ${response.statusCode}`;
+}
+
 export function getPalette(): Promise<PaletteResponse> {
-  return request<PaletteResponse>({
-    url: `${API_BASE_URL}/api/palette`,
-    method: "GET"
-  });
+  return request<PaletteResponse>({ url: `${API_BASE_URL}/api/palette`, method: "GET" });
+}
+
+export function getAiAccessPackages(): Promise<AiPackageOffer[]> {
+  return request<AiPackageOffer[]>({ url: `${API_BASE_URL}/api/ai-access/packages`, method: "GET" }, true);
+}
+
+export function getMyAiAccess(): Promise<AiAccessSummary> {
+  return request<AiAccessSummary>({ url: `${API_BASE_URL}/api/ai-access/me`, method: "GET" }, true);
+}
+
+export function createAiAccessOrder(packageCode: string): Promise<CreateAiOrderResponse> {
+  return request<CreateAiOrderResponse>({
+    url: `${API_BASE_URL}/api/ai-access/orders`,
+    method: "POST",
+    header: { "content-type": "application/json" },
+    data: { packageCode }
+  }, true);
+}
+
+export function redeemAiAdminCode(code: string): Promise<RedeemAdminCodeResponse> {
+  return request<RedeemAdminCodeResponse>({
+    url: `${API_BASE_URL}/api/ai-access/admin-codes/redeem`,
+    method: "POST",
+    header: { "content-type": "application/json" },
+    data: { code }
+  }, true);
 }
 
 export interface UploadGenerationInput {
@@ -78,20 +140,17 @@ export function uploadGeneration(input: UploadGenerationInput): Promise<Generati
     return request<GenerationStatus>({
       url: `${API_BASE_URL}/api/generations`,
       method: "POST",
-      header: {
-        "content-type": "application/x-www-form-urlencoded"
-      },
+      header: { "content-type": "application/x-www-form-urlencoded" },
       data: formData
     });
   }
   if (!input.imagePath) {
     return Promise.reject(new Error("缺少图片"));
   }
-  const imagePath = input.imagePath;
   return new Promise((resolve, reject) => {
     wx.uploadFile({
       url: `${API_BASE_URL}/api/generations`,
-      filePath: imagePath,
+      filePath: input.imagePath as string,
       name: "image",
       formData,
       success(response) {
@@ -112,18 +171,6 @@ export function uploadGeneration(input: UploadGenerationInput): Promise<Generati
   });
 }
 
-function errorMessageFromUploadResponse(response: WechatMiniprogram.UploadFileSuccessCallbackResult, fallback: string): string {
-  try {
-    const parsed = JSON.parse(response.data) as { detail?: string };
-    if (parsed.detail) {
-      return parsed.detail;
-    }
-  } catch {
-    // Keep the status-code fallback when the backend response is not JSON.
-  }
-  return `${fallback}：${response.statusCode}`;
-}
-
 export function recommendPatternSize(imagePath: string): Promise<PatternSizeRecommendation> {
   return new Promise((resolve, reject) => {
     wx.uploadFile({
@@ -139,7 +186,7 @@ export function recommendPatternSize(imagePath: string): Promise<PatternSizeReco
           }
           return;
         }
-        reject(new Error(`推荐尺寸失败：${response.statusCode}`));
+        reject(new Error(errorMessageFromUploadResponse(response, "推荐尺寸失败")));
       },
       fail(error) {
         reject(new Error(error.errMsg));
@@ -154,10 +201,7 @@ export function analyzePatternDebug(input: AnalyzePatternDebugInput): Promise<Pa
       url: `${API_BASE_URL}/api/pattern-debug/analyze`,
       filePath: input.imagePath,
       name: "image",
-      formData: {
-        widthCells: String(input.widthCells),
-        heightCells: String(input.heightCells)
-      },
+      formData: { widthCells: String(input.widthCells), heightCells: String(input.heightCells) },
       success(response) {
         if (response.statusCode >= 200 && response.statusCode < 300) {
           try {
@@ -182,6 +226,7 @@ export function createAiImage(input: CreateAiImageInput): Promise<AiImageStatus>
       url: `${API_BASE_URL}/api/ai-images`,
       filePath: input.imagePath,
       name: "image",
+      header: authHeader(),
       formData: buildAiImageFormData(input),
       success(response) {
         if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -192,7 +237,7 @@ export function createAiImage(input: CreateAiImageInput): Promise<AiImageStatus>
           }
           return;
         }
-        reject(new Error(`AI 生图失败：${response.statusCode}`));
+        reject(new Error(errorMessageFromUploadResponse(response, "AI 生图失败")));
       },
       fail(error) {
         reject(new Error(error.errMsg));
@@ -202,19 +247,14 @@ export function createAiImage(input: CreateAiImageInput): Promise<AiImageStatus>
 }
 
 export function getGeneration(generationId: string): Promise<GenerationStatus> {
-  return request<GenerationStatus>({
-    url: `${API_BASE_URL}/api/generations/${generationId}`,
-    method: "GET"
-  });
+  return request<GenerationStatus>({ url: `${API_BASE_URL}/api/generations/${generationId}`, method: "GET" });
 }
 
 export function getAiImage(aiImageId: string): Promise<AiImageStatus> {
-  return request<AiImageStatus>({
-    url: `${API_BASE_URL}/api/ai-images/${aiImageId}`,
-    method: "GET"
-  });
+  return request<AiImageStatus>({ url: `${API_BASE_URL}/api/ai-images/${aiImageId}`, method: "GET" });
 }
 
 export function aiImageUrl(aiImageId: string): string {
   return `${API_BASE_URL}/api/ai-images/${aiImageId}/image`;
 }
+

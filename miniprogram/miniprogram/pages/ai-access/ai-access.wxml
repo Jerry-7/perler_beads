@@ -1,0 +1,33 @@
+<view class="ai-access-page">
+  <view class="access-summary">
+    <text class="summary-kicker">AI 生图权益</text>
+    <text class="summary-title">{{accessText}}</text>
+    <text class="summary-desc">AI 生图成功后扣 1 次；管理员免费期内不扣次数。</text>
+  </view>
+
+  <view class="section-heading">
+    <text>购买套餐</text>
+  </view>
+  <view class="package-list">
+    <button
+      wx:for="{{packages}}"
+      wx:key="code"
+      class="package-card"
+      loading="{{isPaying}}"
+      data-code="{{item.code}}"
+      bindtap="buyPackage"
+    >
+      <text class="package-price">{{item.priceText}}</text>
+      <text class="package-quota">{{item.quotaText}}</text>
+      <text class="package-action">购买</text>
+    </button>
+  </view>
+
+  <view class="redeem-panel">
+    <text class="redeem-title">管理员权限码</text>
+    <view class="redeem-row">
+      <input class="redeem-input" placeholder="输入 24 小时免费权限码" value="{{redeemCode}}" bindinput="onRedeemCodeInput" />
+      <button class="redeem-button" loading="{{isRedeeming}}" bindtap="redeemCode">兑换</button>
+    </view>
+  </view>
+</view>

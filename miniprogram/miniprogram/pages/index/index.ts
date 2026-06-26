@@ -14,7 +14,8 @@ import {
   type AiStyle
 } from "../../utils/aiGenerationOptions";
 import { aiImageProgressText, nextAiImageProgress } from "../../utils/aiImageProgress";
-import { aiImageUrl, createAiImage, getAiImage, getGeneration, getPalette, recommendPatternSize, uploadGeneration, type ColorComplexity } from "../../utils/api";
+import { ensureWechatSession } from "../../utils/auth";
+import { aiImageUrl, createAiImage, getAiImage, getGeneration, getMyAiAccess, getPalette, recommendPatternSize, uploadGeneration, type ColorComplexity } from "../../utils/api";
 import { calculatePreviewCanvasSize, calculateZoomedCanvasSize } from "../../utils/canvasSizing";
 import {
   createEditorHistory,
@@ -34,8 +35,9 @@ import { applyPatternSizeOption, PATTERN_SIZE_OPTIONS } from "../../utils/patter
 import { buildPatternSizeWarning } from "../../utils/patternSizeWarning";
 import { formatTraceCellStatus, getCanvasPointFromEvent, getPatternCellFromPoint, type CanvasPointEvent } from "../../utils/patternTracing";
 import { saveImageWithAlbumPermission } from "../../utils/photoAlbum";
+import { AI_ACCESS_ROUTE } from "../../utils/routes";
 import { DEFAULT_SAMPLING_MODE_INDEX, SAMPLING_MODE_OPTIONS, type SamplingMode } from "../../utils/samplingModeOptions";
-import type { BeadUsage, PaletteColor, PatternCell, PatternResult, PatternSizeRecommendation, Rgb } from "../../utils/types";
+import type { AiAccessSummary, BeadUsage, PaletteColor, PatternCell, PatternResult, PatternSizeRecommendation, Rgb } from "../../utils/types";
 import { isBeadCell, isEmptyCell } from "../../utils/types";
 
 type PatternSource = "original" | "ai";
@@ -76,6 +78,30 @@ type CanvasContextLike = {
   lineJoin: string;
 };
 
+function formatAiAccessDateTime(value: string): string {
+  if (!value) {
+    return "-";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  const hours = `${date.getHours()}`.padStart(2, "0");
+  const minutes = `${date.getMinutes()}`.padStart(2, "0");
+  return `${month}-${day} ${hours}:${minutes}`;
+}
+
+function formatAiAccessSummary(summary: AiAccessSummary | null): string {
+  if (!summary) {
+    return "进入 AI 生图后读取权益";
+  }
+  if (summary.hasFreeAccess) {
+    return `管理员免费中，至 ${formatAiAccessDateTime(summary.freeAccessExpiresAt || "")}`;
+  }
+  return `剩余 ${summary.remainingQuota} 次`;
+}
 Page({
   data: {
     // 当前激活的工具/视图。可选值："home"(首页), "ai"(AI生图), "pattern"(图纸制作)
@@ -92,6 +118,11 @@ Page({
     aiImageProgressText: "",
     aiImageId: "",
     aiImagePath: "",
+    aiAccessText: "进入 AI 生图后读取权益",
+    aiRemainingQuota: 0,
+    aiHasFreeAccess: false,
+    aiFreeAccessExpiresAt: "",
+    isLoadingAiAccess: false,
     patternSource: "original" as PatternSource,
     isRecommendingSize: false,
     canGenerate: false,
@@ -192,6 +223,12 @@ Page({
     this.loadPaletteColors();
   },
 
+  onShow() {
+    if (this.data.activeTool === "ai") {
+      this.refreshAiAccessSummary(true);
+    }
+  },
+
   // 加载调色板颜色
   async loadPaletteColors() {
     try {
@@ -203,7 +240,12 @@ Page({
   },
 
   openAiTool() {
-    this.setData({ activeTool: "ai" });
+    this.setData({ activeTool: "ai", aiAccessText: "正在读取权益" });
+    this.refreshAiAccessSummary(true);
+  },
+
+  openAiAccessPage() {
+    wx.navigateTo({ url: AI_ACCESS_ROUTE });
   },
 
   openPatternTool() {
@@ -433,6 +475,55 @@ Page({
     );
   },
 
+
+  async refreshAiAccessSummary(silent = false): Promise<AiAccessSummary | null> {
+    if (!silent) {
+      this.setData({ isLoadingAiAccess: true, aiAccessText: "正在读取权益" });
+    }
+    try {
+      await ensureWechatSession();
+      const summary = await getMyAiAccess();
+      this.setData({
+        aiAccessText: formatAiAccessSummary(summary),
+        aiRemainingQuota: summary.remainingQuota,
+        aiHasFreeAccess: summary.hasFreeAccess,
+        aiFreeAccessExpiresAt: summary.freeAccessExpiresAt || ""
+      });
+      return summary;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "权益读取失败";
+      if (!silent) {
+        wx.showToast({ title: message, icon: "none" });
+      }
+      this.setData({ aiAccessText: "权益读取失败，请检查登录或后端配置" });
+      return null;
+    } finally {
+      if (!silent) {
+        this.setData({ isLoadingAiAccess: false });
+      }
+    }
+  },
+
+  async ensureAiGenerationAccess(): Promise<boolean> {
+    const summary = await this.refreshAiAccessSummary(false);
+    if (!summary || !summary.canGenerateAi) {
+      wx.navigateTo({ url: AI_ACCESS_ROUTE });
+      return false;
+    }
+    const content = summary.hasFreeAccess
+      ? `当前管理员免费期内，本次成功后不扣次数。免费至 ${formatAiAccessDateTime(summary.freeAccessExpiresAt || "")}`
+      : `当前剩余 ${summary.remainingQuota} 次，本次成功后将扣 1 次。`;
+    return new Promise((resolve) => {
+      wx.showModal({
+        title: "确认生成 AI 图",
+        content,
+        confirmText: "继续生成",
+        cancelText: "取消",
+        success: (result) => resolve(result.confirm),
+        fail: () => resolve(false)
+      });
+    });
+  },
   refreshPatternSizeWarning() {
     this.setData({
       patternSizeWarning: buildPatternSizeWarning({
@@ -448,6 +539,11 @@ Page({
     const { imagePath, widthCells, heightCells, aiDetail, aiStyle, aiEffect3d, aiShading } = this.data;
     if (!imagePath || widthCells < 1 || heightCells < 1) {
       wx.showToast({ title: "请先上传图片", icon: "none" });
+      return;
+    }
+
+    const canGenerateAi = await this.ensureAiGenerationAccess();
+    if (!canGenerateAi) {
       return;
     }
 
@@ -496,6 +592,7 @@ Page({
         selectedBatchEditColor: null,
         selectedBatchEditColorText: "未选择颜色"
       });
+      this.refreshAiAccessSummary(true);
     } catch (error) {
       this.setData({
         aiImageProgress: 0,

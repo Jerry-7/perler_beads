@@ -27,7 +27,10 @@
   <view wx:if="{{activeTool === 'ai'}}" class="panel control-panel">
     <view class="panel-heading">
       <text class="panel-title">AI 生图设置</text>
-      <button class="link-button" size="mini" bindtap="backToToolHome">返回</button>
+      <view class="heading-actions">
+        <button class="link-button" size="mini" bindtap="openAiAccessPage">权益</button>
+        <button class="link-button" size="mini" bindtap="backToToolHome">返回</button>
+      </view>
     </view>
 
     <view class="preview {{imagePath ? 'has-image' : ''}}" bindtap="chooseImage">
@@ -98,6 +101,11 @@
           </view>
         </picker>
       </label>
+    </view>
+
+    <view class="ai-access-strip">
+      <text>{{aiAccessText}}</text>
+      <button size="mini" class="ai-access-link" bindtap="openAiAccessPage">购买/兑换</button>
     </view>
 
     <button class="generate-button" loading="{{isGeneratingAiImage}}" disabled="{{!imagePath || isGeneratingAiImage}}" bindtap="generateAiImage">
@@ -411,4 +419,8 @@
     </view>
   </view>
 </view>
+
+
+
+
 

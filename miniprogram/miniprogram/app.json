@@ -2,6 +2,7 @@
   "pages": [
     "pages/home/home",
     "pages/index/index",
+    "pages/ai-access/ai-access",
     "pages/gallery/gallery"
   ],
   "window": {
