@@ -1,15 +1,40 @@
+import json
 import logging
+from typing import Any
 
-from fastapi import FastAPI, File, Form, HTTPException, Response, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.models import AiImageResponse, AiImageStatusResponse, GenerationResponse, GenerationStatusResponse, PaletteResponse, PatternDebugAnalysis, PatternSizeRecommendation
+from app.models import (
+    AiAccessSummary,
+    AiImageResponse,
+    AiImageStatusResponse,
+    AiPackageOffer,
+    CreateAdminCodesRequest,
+    CreateAdminCodesResponse,
+    CreateAiOrderRequest,
+    CreateAiOrderResponse,
+    GenerationResponse,
+    GenerationStatusResponse,
+    PaletteResponse,
+    PatternDebugAnalysis,
+    PatternSizeRecommendation,
+    RedeemAdminCodeRequest,
+    RedeemAdminCodeResponse,
+    UserSummary,
+    WechatLoginRequest,
+    WechatLoginResponse,
+)
 from app.palette import PALETTE_VERSION, get_enabled_palette, get_palette
+from app.services.ai_access import AiAccessError, UserRecord, ai_access_service
 from app.services.ai_images import ai_image_store
+from app.services.auth import AuthError, create_session_token_service, create_wechat_auth_client
 from app.services.color_simplification import ColorSimplificationProfile
 from app.services.generation import GenerationError, generation_store
 from app.services.pattern_debug import PatternDebugError, analyze_pattern_mapping
 from app.services.size_recommendation import SizeRecommendationError, recommend_pattern_size_from_image
+from app.services.wechat_pay import WechatPayError, create_wechat_pay_client
+from app.settings import load_settings
 
 AI_STYLE_OPTIONS = {"faithful", "iconic", "crafted", "dramatic"}
 AI_EFFECT_3D_OPTIONS = {"none", "subtle", "balanced", "strong"}
@@ -20,6 +45,9 @@ LOGGER = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
 
 app = FastAPI(title="Perler Beads Pattern Generator", version="0.1.0")
+wechat_auth_client = create_wechat_auth_client()
+session_token_service = create_session_token_service()
+wechat_pay_client = None
 
 app.add_middleware(
     CORSMiddleware,
@@ -30,29 +58,26 @@ app.add_middleware(
 )
 
 
-@app.get("/api/health")
-def health() -> dict[str, object]:
-    return {"status": "ok", "samplingModes": sorted(SAMPLING_MODE_OPTIONS)}
+def user_summary_from_record(user: UserRecord) -> UserSummary:
+    return UserSummary(openid=user.openid, createdAt=user.created_at, lastLoginAt=user.last_login_at)
 
 
-@app.get("/api/palette", response_model=PaletteResponse)
-def palette() -> PaletteResponse:
-    return PaletteResponse(version=PALETTE_VERSION, colors=get_palette())
-
-
-@app.post("/api/pattern-size/recommendation", response_model=PatternSizeRecommendation)
-async def recommend_pattern_size(image: UploadFile = File(...)) -> PatternSizeRecommendation:
-    if not image.content_type or not image.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="Uploaded file must be an image")
-
-    image_bytes = await image.read()
-    if not image_bytes:
-        raise HTTPException(status_code=400, detail="Uploaded image is empty")
-
+def require_current_user(authorization: str | None = Header(None)) -> UserRecord:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing session token")
+    token = authorization.removeprefix("Bearer ").strip()
     try:
-        return recommend_pattern_size_from_image(image_bytes)
-    except SizeRecommendationError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        principal = session_token_service.verify(token)
+    except AuthError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    return ai_access_service.ensure_user(principal.openid)
+
+
+def get_wechat_pay_client():
+    global wechat_pay_client
+    if wechat_pay_client is None:
+        wechat_pay_client = create_wechat_pay_client()
+    return wechat_pay_client
 
 
 def validate_generation_controls(width_cells: int, height_cells: int, source_mode: str, sampling_mode: str = "dominant") -> None:
@@ -112,6 +137,94 @@ def ai_image_url(ai_image_id: str) -> str:
     return f"/api/ai-images/{ai_image_id}/image"
 
 
+@app.get("/api/health")
+def health() -> dict[str, object]:
+    return {"status": "ok", "samplingModes": sorted(SAMPLING_MODE_OPTIONS)}
+
+
+@app.get("/api/palette", response_model=PaletteResponse)
+def palette() -> PaletteResponse:
+    return PaletteResponse(version=PALETTE_VERSION, colors=get_palette())
+
+
+@app.post("/api/auth/wechat/login", response_model=WechatLoginResponse)
+def wechat_login(payload: WechatLoginRequest) -> WechatLoginResponse:
+    try:
+        session = wechat_auth_client.exchange_code(payload.code)
+    except AuthError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    user = ai_access_service.ensure_user(session.openid)
+    token, expires_at = session_token_service.issue(user.openid)
+    return WechatLoginResponse(sessionToken=token, expiresAt=expires_at.isoformat(), userSummary=user_summary_from_record(user))
+
+
+@app.get("/api/ai-access/packages", response_model=list[AiPackageOffer])
+def ai_access_packages() -> list[AiPackageOffer]:
+    return ai_access_service.get_package_offers()
+
+
+@app.get("/api/ai-access/me", response_model=AiAccessSummary)
+def my_ai_access(current_user: UserRecord = Depends(require_current_user)) -> AiAccessSummary:
+    return ai_access_service.get_access_summary(current_user)
+
+
+@app.post("/api/ai-access/orders", response_model=CreateAiOrderResponse)
+def create_ai_order(payload: CreateAiOrderRequest, current_user: UserRecord = Depends(require_current_user)) -> CreateAiOrderResponse:
+    try:
+        order_no, offer = ai_access_service.create_order(current_user, payload.packageCode)
+        prepay = get_wechat_pay_client().create_jsapi_order(order_no=order_no, amount_fen=offer.amountFen, description=offer.title, openid=current_user.openid)
+    except (AiAccessError, WechatPayError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return CreateAiOrderResponse(orderNo=order_no, packageCode=offer.code, amountFen=offer.amountFen, quotaAmount=offer.quotaAmount, status="created", paymentParams=prepay.payment_params)
+
+
+@app.post("/api/ai-access/orders/wechat-notify")
+async def wechat_payment_notify(request: Request) -> dict[str, str]:
+    try:
+        raw_body = await request.body()
+        payload = json.loads(raw_body.decode("utf-8"))
+        transaction = get_wechat_pay_client().parse_notify(payload, headers=dict(request.headers), raw_body=raw_body)
+        order_no = transaction.get("out_trade_no")
+        transaction_id = transaction.get("transaction_id", "")
+        trade_state = transaction.get("trade_state", "SUCCESS")
+        success_time = transaction.get("success_time")
+        if trade_state == "SUCCESS" and isinstance(order_no, str):
+            ai_access_service.mark_order_paid(order_no, str(transaction_id), paid_at=success_time)
+    except (AiAccessError, WechatPayError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"code": "SUCCESS", "message": "success"}
+
+
+@app.post("/api/ai-access/admin-codes/redeem", response_model=RedeemAdminCodeResponse)
+def redeem_admin_code(payload: RedeemAdminCodeRequest, current_user: UserRecord = Depends(require_current_user)) -> RedeemAdminCodeResponse:
+    try:
+        free_expires_at = ai_access_service.redeem_admin_code(current_user, payload.code)
+    except AiAccessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return RedeemAdminCodeResponse(hasFreeAccess=True, freeAccessExpiresAt=free_expires_at)
+
+
+@app.post("/api/admin/ai-access/codes", response_model=CreateAdminCodesResponse)
+def create_admin_codes(payload: CreateAdminCodesRequest, x_admin_api_key: str | None = Header(None)) -> CreateAdminCodesResponse:
+    expected_key = load_settings().ai_admin_api_key
+    if not expected_key or x_admin_api_key != expected_key:
+        raise HTTPException(status_code=401, detail="Invalid admin API key")
+    return CreateAdminCodesResponse(codes=ai_access_service.create_admin_codes(payload.count, created_by="api"))
+
+
+@app.post("/api/pattern-size/recommendation", response_model=PatternSizeRecommendation)
+async def recommend_pattern_size(image: UploadFile = File(...)) -> PatternSizeRecommendation:
+    if not image.content_type or not image.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Uploaded file must be an image")
+    image_bytes = await image.read()
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded image is empty")
+    try:
+        return recommend_pattern_size_from_image(image_bytes)
+    except SizeRecommendationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.post("/api/generations", response_model=GenerationResponse)
 async def create_generation(
     image: UploadFile | None = File(None),
@@ -128,12 +241,8 @@ async def create_generation(
     try:
         color_complexity = ColorSimplificationProfile(colorComplexity)
     except ValueError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail="colorComplexity must be minimal, simple, balanced, detailed, or original",
-        ) from exc
+        raise HTTPException(status_code=400, detail="colorComplexity must be minimal, simple, balanced, detailed, or original") from exc
     image_bytes = await read_generation_image(image, aiImageId)
-
     try:
         generation = generation_store.create(
             image_bytes=image_bytes,
@@ -147,16 +256,11 @@ async def create_generation(
         )
     except GenerationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-
     return GenerationResponse(generationId=generation.id, status=generation.status)
 
 
 @app.post("/api/pattern-debug/analyze", response_model=PatternDebugAnalysis)
-async def analyze_pattern_debug(
-    image: UploadFile = File(...),
-    widthCells: int = Form(...),
-    heightCells: int = Form(...),
-) -> PatternDebugAnalysis:
+async def analyze_pattern_debug(image: UploadFile = File(...), widthCells: int = Form(...), heightCells: int = Form(...)) -> PatternDebugAnalysis:
     validate_generation_controls(widthCells, heightCells, "resample", "nearest")
     image_bytes = await read_uploaded_image(image)
     try:
@@ -175,9 +279,10 @@ async def create_ai_image(
     aiEffect3d: str = Form("balanced"),
     aiShading: str = Form("step"),
     aiMaxColors: int = Form(16),
+    current_user: UserRecord = Depends(require_current_user),
 ) -> AiImageResponse:
     LOGGER.info(
-        "ai_image endpoint_received width_cells=%s height_cells=%s ai_detail=%s ai_style=%s ai_effect_3d=%s ai_shading=%s ai_max_colors=%s",
+        "ai_image endpoint_received width_cells=%s height_cells=%s ai_detail=%s ai_style=%s ai_effect_3d=%s ai_shading=%s ai_max_colors=%s user_id=%s",
         widthCells,
         heightCells,
         aiDetail,
@@ -185,9 +290,14 @@ async def create_ai_image(
         aiEffect3d,
         aiShading,
         aiMaxColors,
+        current_user.id,
     )
     validate_generation_controls(widthCells, heightCells, "resample")
     validate_ai_controls(aiDetail, aiStyle, aiEffect3d, aiShading, aiMaxColors)
+    free_access_expires_at = ai_access_service.get_active_free_access_expiry(current_user.id)
+    remaining_quota = ai_access_service.get_remaining_quota(current_user.id)
+    if free_access_expires_at is None and remaining_quota <= 0:
+        raise HTTPException(status_code=403, detail="AI generation quota is required")
     image_bytes = await read_uploaded_image(image)
     ai_image = ai_image_store.create(
         image_bytes=image_bytes,
@@ -198,14 +308,11 @@ async def create_ai_image(
         ai_effect_3d=aiEffect3d,
         ai_shading=aiShading,
         ai_max_colors=aiMaxColors,
+        user_id=current_user.id,
+        used_free_access=free_access_expires_at is not None,
     )
     LOGGER.info("ai_image endpoint_returning id=%s status=%s", ai_image.id, ai_image.status)
-
-    return AiImageResponse(
-        aiImageId=ai_image.id,
-        status=ai_image.status,
-        imageUrl=ai_image_url(ai_image.id) if ai_image.image_bytes else None,
-    )
+    return AiImageResponse(aiImageId=ai_image.id, status=ai_image.status, imageUrl=ai_image_url(ai_image.id) if ai_image.image_bytes else None)
 
 
 @app.get("/api/ai-images/{ai_image_id}", response_model=AiImageStatusResponse)
@@ -213,12 +320,7 @@ def get_ai_image(ai_image_id: str) -> AiImageStatusResponse:
     ai_image = ai_image_store.get(ai_image_id)
     if ai_image is None:
         raise HTTPException(status_code=404, detail="AI image not found")
-    return AiImageStatusResponse(
-        aiImageId=ai_image.id,
-        status=ai_image.status,
-        imageUrl=ai_image_url(ai_image.id) if ai_image.image_bytes else None,
-        error=ai_image.error,
-    )
+    return AiImageStatusResponse(aiImageId=ai_image.id, status=ai_image.status, imageUrl=ai_image_url(ai_image.id) if ai_image.image_bytes else None, error=ai_image.error)
 
 
 @app.get("/api/ai-images/{ai_image_id}/image")
@@ -234,9 +336,6 @@ def get_generation(generation_id: str) -> GenerationStatusResponse:
     generation = generation_store.get(generation_id)
     if generation is None:
         raise HTTPException(status_code=404, detail="Generation not found")
-    return GenerationStatusResponse(
-        generationId=generation.id,
-        status=generation.status,
-        error=generation.error,
-        result=generation.result,
-    )
+    return GenerationStatusResponse(generationId=generation.id, status=generation.status, error=generation.error, result=generation.result)
+
+

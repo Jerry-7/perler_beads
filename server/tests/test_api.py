@@ -6,15 +6,33 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 import app.main as main_module
+import app.services.ai_images as ai_images_module
 from app.main import app
 from app.providers.ai_pixel_art import AiPixelArtProvider, AiPixelArtProviderConfig
 from app.providers.base import PixelArtCell
+from app.services.ai_access import AiAccessService
 from app.services.ai_images import AiImageStore
+from app.services.auth import SessionTokenService
+from app.services.storage import Database
 from app.services.generation import GenerationError
 from app.services.generation import GenerationStore
 
 
 client = TestClient(app)
+
+def setup_authenticated_ai_access(monkeypatch: pytest.MonkeyPatch, tmp_path) -> dict[str, str]:
+    db = Database(str(tmp_path / "test-api-access.sqlite3"))
+    db.initialize()
+    access_service = AiAccessService(db)
+    token_service = SessionTokenService("test-api-secret", 7)
+    user = access_service.ensure_user("openid-test-api")
+    order_no, _ = access_service.create_order(user, "pkg_100_3")
+    access_service.mark_order_paid(order_no, "txn-test-api")
+    token, _ = token_service.issue(user.openid)
+    monkeypatch.setattr(main_module, "ai_access_service", access_service)
+    monkeypatch.setattr(main_module, "session_token_service", token_service)
+    monkeypatch.setattr(ai_images_module, "ai_access_service", access_service)
+    return {"Authorization": f"Bearer {token}"}
 
 
 def make_image() -> bytes:
@@ -111,12 +129,14 @@ def test_health_reports_supported_sampling_modes() -> None:
     assert "line-art" in response.json()["samplingModes"]
 
 
-def test_create_ai_image_and_fetch_generated_image(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_create_ai_image_and_fetch_generated_image(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     store = FakeAiImageStore()
+    headers = setup_authenticated_ai_access(monkeypatch, tmp_path)
     monkeypatch.setattr(main_module, "ai_image_store", store)
 
     response = client.post(
         "/api/ai-images",
+        headers=headers,
         data={
             "widthCells": "8",
             "heightCells": "10",
@@ -152,12 +172,14 @@ def test_create_ai_image_and_fetch_generated_image(monkeypatch: pytest.MonkeyPat
     assert image_response.content == store.image_bytes
 
 
-def test_create_ai_image_returns_processing_before_background_result(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_create_ai_image_returns_processing_before_background_result(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     store = ImmediateFakeAiImageStore()
+    headers = setup_authenticated_ai_access(monkeypatch, tmp_path)
     monkeypatch.setattr(main_module, "ai_image_store", store)
 
     response = client.post(
         "/api/ai-images",
+        headers=headers,
         data={"widthCells": "8", "heightCells": "10"},
         files={"image": ("test.png", make_image(), "image/png")},
     )
@@ -555,9 +577,11 @@ def test_create_generation_can_use_ai_provider_with_image_url_response(monkeypat
     assert body["result"]["heightCells"] == 4
 
 
-def test_rejects_invalid_ai_detail_for_ai_image_generation() -> None:
+def test_rejects_invalid_ai_detail_for_ai_image_generation(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    headers = setup_authenticated_ai_access(monkeypatch, tmp_path)
     response = client.post(
         "/api/ai-images",
+        headers=headers,
         data={"widthCells": "8", "heightCells": "8", "aiDetail": "too-much"},
         files={"image": ("test.png", make_image(), "image/png")},
     )
@@ -565,7 +589,8 @@ def test_rejects_invalid_ai_detail_for_ai_image_generation() -> None:
     assert response.status_code == 400
 
 
-def test_rejects_invalid_ai_prompt_controls_for_ai_image_generation() -> None:
+def test_rejects_invalid_ai_prompt_controls_for_ai_image_generation(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    headers = setup_authenticated_ai_access(monkeypatch, tmp_path)
     invalid_cases = [
         {"aiStyle": "portrait"},
         {"aiEffect3d": "extreme"},
@@ -577,8 +602,13 @@ def test_rejects_invalid_ai_prompt_controls_for_ai_image_generation() -> None:
     for data in invalid_cases:
         response = client.post(
             "/api/ai-images",
+            headers=headers,
             data={"widthCells": "8", "heightCells": "8", **data},
             files={"image": ("test.png", make_image(), "image/png")},
         )
 
         assert response.status_code == 400
+
+
+
+
