@@ -14,7 +14,7 @@ DEFAULT_AI_IMAGE_PROMPT = (
     "If the subject is a person or animal, extract expressive facial/body cues; otherwise preserve the object's "
     "distinct shape, material cues, and recognizable details. Generation style: {style_prompt}. "
     "Detail level: {ai_detail}. 3D effect: {effect_3d}. Shading: {shading}. "
-    "Designed as a physical Perler bead pattern at {size} cells. Strict crafting constraints: max {max_colors} colors, "
+    "Designed as a physical Perler bead pattern on a clear grid of {size} cells to aid placement. Strict crafting constraints: max {max_colors} colors, "
     "bold 1-pixel dark outlines, no anti-aliasing, no smooth gradients, connected pixel clusters, "
     "zero isolated floating pixels, solid light-gray background. Dynamic and expressive. "
     "Negative prompt: {negative_prompt}."
