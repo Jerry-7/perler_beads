@@ -66,6 +66,16 @@ class Database:
                     created_by TEXT NOT NULL,
                     FOREIGN KEY (redeemed_by_user_id) REFERENCES users(id)
                 );
+                CREATE TABLE IF NOT EXISTS ai_access_keys (
+                    code TEXT PRIMARY KEY,
+                    total_uses INTEGER NOT NULL,
+                    used_count INTEGER NOT NULL DEFAULT 0,
+                    status TEXT NOT NULL,
+                    expires_at TEXT,
+                    created_at TEXT NOT NULL,
+                    created_by TEXT NOT NULL,
+                    last_used_at TEXT
+                );
                 CREATE TABLE IF NOT EXISTS ai_image_jobs (
                     ai_image_id TEXT PRIMARY KEY,
                     user_id INTEGER NOT NULL,
@@ -73,6 +83,13 @@ class Database:
                     used_free_access INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL,
                     FOREIGN KEY (user_id) REFERENCES users(id)
+                );
+                CREATE TABLE IF NOT EXISTS ai_key_image_jobs (
+                    ai_image_id TEXT PRIMARY KEY,
+                    access_code TEXT NOT NULL,
+                    quota_debited INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (access_code) REFERENCES ai_access_keys(code)
                 );
                 """
             )

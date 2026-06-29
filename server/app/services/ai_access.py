@@ -4,7 +4,7 @@ import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from app.models import AiAccessSummary, AiPackageOffer, AdminCodeItem
+from app.models import AccessKeyItem, AccessKeySummary, AiAccessSummary, AiPackageOffer, AdminCodeItem
 from app.services.storage import Database, database
 
 
@@ -27,6 +27,18 @@ class UserRecord:
     openid: str
     created_at: str
     last_login_at: str
+
+
+@dataclass(frozen=True)
+class AccessKeyRecord:
+    code: str
+    total_uses: int
+    used_count: int
+    status: str
+    expires_at: str | None
+    created_at: str
+    created_by: str
+    last_used_at: str | None
 
 
 class AiAccessService:
@@ -181,6 +193,60 @@ class AiAccessService:
                 items.append(AdminCodeItem(code=code, expiresAt=expires_at))
         return items
 
+    def create_access_keys(self, count: int, uses_per_code: int, created_by: str, expires_at: str | None = None) -> list[AccessKeyItem]:
+        now_iso = datetime.now(UTC).isoformat()
+        items: list[AccessKeyItem] = []
+        with self._db.connect() as conn:
+            for _ in range(count):
+                code = self._new_access_code()
+                conn.execute(
+                    """
+                    INSERT INTO ai_access_keys (code, total_uses, used_count, status, expires_at, created_at, created_by)
+                    VALUES (?, ?, 0, 'active', ?, ?, ?)
+                    """,
+                    (code, uses_per_code, expires_at, now_iso, created_by),
+                )
+                items.append(
+                    AccessKeyItem(
+                        code=code,
+                        totalUses=uses_per_code,
+                        usedCount=0,
+                        remainingUses=uses_per_code,
+                        status="active",
+                        expiresAt=expires_at,
+                        createdAt=now_iso,
+                        createdBy=created_by,
+                    )
+                )
+        return items
+
+    def get_access_key_summary(self, code: str) -> AccessKeySummary:
+        record = self._get_access_key_record(code)
+        self._ensure_access_key_exists(record)
+        assert record is not None
+        status = self._effective_access_key_status(record)
+        remaining = max(0, record.total_uses - record.used_count)
+        return AccessKeySummary(
+            code=record.code,
+            totalUses=record.total_uses,
+            usedCount=record.used_count,
+            remainingUses=remaining,
+            status=status,
+            expiresAt=record.expires_at,
+            canGenerateAi=status == "active" and remaining > 0,
+        )
+
+    def validate_access_key_for_generation(self, code: str) -> AccessKeyRecord:
+        record = self._get_access_key_record(code)
+        self._ensure_access_key_exists(record)
+        assert record is not None
+        status = self._effective_access_key_status(record)
+        if status != "active":
+            raise AiAccessError(f"access key is {status}")
+        if record.used_count >= record.total_uses:
+            raise AiAccessError("access key has no remaining uses")
+        return record
+
     def register_ai_image_job(self, ai_image_id: str, user_id: int, used_free_access: bool) -> None:
         with self._db.connect() as conn:
             conn.execute(
@@ -189,6 +255,16 @@ class AiAccessService:
                 VALUES (?, ?, 0, ?, ?)
                 """,
                 (ai_image_id, user_id, 1 if used_free_access else 0, datetime.now(UTC).isoformat()),
+            )
+
+    def register_ai_image_key_job(self, ai_image_id: str, access_code: str) -> None:
+        with self._db.connect() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO ai_key_image_jobs (ai_image_id, access_code, quota_debited, created_at)
+                VALUES (?, ?, 0, ?)
+                """,
+                (ai_image_id, access_code, datetime.now(UTC).isoformat()),
             )
 
     def debit_quota_for_ai_image_if_needed(self, ai_image_id: str, succeeded: bool) -> None:
@@ -211,6 +287,84 @@ class AiAccessService:
                 """,
                 (now, row["user_id"]),
             )
+
+    def debit_access_key_for_ai_image_if_needed(self, ai_image_id: str, succeeded: bool) -> None:
+        if not succeeded:
+            return
+        now = datetime.now(UTC).isoformat()
+        with self._db.connect() as conn:
+            row = conn.execute(
+                "SELECT access_code, quota_debited FROM ai_key_image_jobs WHERE ai_image_id = ?",
+                (ai_image_id,),
+            ).fetchone()
+            if row is None or row["quota_debited"]:
+                return
+            key_row = conn.execute(
+                "SELECT total_uses, used_count, status, expires_at FROM ai_access_keys WHERE code = ?",
+                (row["access_code"],),
+            ).fetchone()
+            if key_row is None:
+                return
+            if self._effective_status_from_values(key_row["status"], key_row["expires_at"], key_row["used_count"], key_row["total_uses"]) != "active":
+                return
+            conn.execute("UPDATE ai_key_image_jobs SET quota_debited = 1 WHERE ai_image_id = ?", (ai_image_id,))
+            conn.execute(
+                """
+                UPDATE ai_access_keys
+                SET used_count = used_count + 1,
+                    last_used_at = ?,
+                    status = CASE WHEN used_count + 1 >= total_uses THEN 'exhausted' ELSE status END
+                WHERE code = ?
+                """,
+                (now, row["access_code"]),
+            )
+
+    def _new_access_code(self) -> str:
+        return f"AI-{secrets.token_urlsafe(12).replace('_', '').replace('-', '').upper()[:16]}"
+
+    def _get_access_key_record(self, code: str) -> AccessKeyRecord | None:
+        normalized = code.strip().upper()
+        with self._db.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT code, total_uses, used_count, status, expires_at, created_at, created_by, last_used_at
+                FROM ai_access_keys
+                WHERE code = ?
+                """,
+                (normalized,),
+            ).fetchone()
+            if row is None:
+                return None
+            return AccessKeyRecord(
+                code=row["code"],
+                total_uses=row["total_uses"],
+                used_count=row["used_count"],
+                status=row["status"],
+                expires_at=row["expires_at"],
+                created_at=row["created_at"],
+                created_by=row["created_by"],
+                last_used_at=row["last_used_at"],
+            )
+
+    def _ensure_access_key_exists(self, record: AccessKeyRecord | None) -> None:
+        if record is None:
+            raise AiAccessError("access key not found")
+
+    def _effective_access_key_status(self, record: AccessKeyRecord) -> str:
+        return self._effective_status_from_values(record.status, record.expires_at, record.used_count, record.total_uses)
+
+    def _effective_status_from_values(self, status: str, expires_at: str | None, used_count: int, total_uses: int) -> str:
+        if status not in {"active", "exhausted"}:
+            return status
+        if expires_at:
+            expires_datetime = datetime.fromisoformat(expires_at)
+            if expires_datetime.tzinfo is None:
+                expires_datetime = expires_datetime.replace(tzinfo=UTC)
+            if expires_datetime <= datetime.now(UTC):
+                return "expired"
+        if used_count >= total_uses:
+            return "exhausted"
+        return status
 
 
 ai_access_service = AiAccessService()

@@ -7,9 +7,15 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.models import (
     AiAccessSummary,
+    AccessKeySummary,
+    AccessKeySummaryRequest,
     AiImageResponse,
     AiImageStatusResponse,
     AiPackageOffer,
+    AdminLoginRequest,
+    AdminLoginResponse,
+    CreateAccessKeysRequest,
+    CreateAccessKeysResponse,
     CreateAdminCodesRequest,
     CreateAdminCodesResponse,
     CreateAiOrderRequest,
@@ -28,7 +34,7 @@ from app.models import (
 from app.palette import PALETTE_VERSION, get_enabled_palette, get_palette
 from app.services.ai_access import AiAccessError, UserRecord, ai_access_service
 from app.services.ai_images import ai_image_store
-from app.services.auth import AuthError, create_session_token_service, create_wechat_auth_client
+from app.services.auth import AdminPrincipal, AuthError, create_admin_token_service, create_session_token_service, create_wechat_auth_client
 from app.services.color_simplification import ColorSimplificationProfile
 from app.services.generation import GenerationError, generation_store
 from app.services.pattern_debug import PatternDebugError, analyze_pattern_mapping
@@ -47,6 +53,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message
 app = FastAPI(title="Perler Beads Pattern Generator", version="0.1.0")
 wechat_auth_client = create_wechat_auth_client()
 session_token_service = create_session_token_service()
+admin_token_service = create_admin_token_service()
 wechat_pay_client = None
 
 app.add_middleware(
@@ -71,6 +78,16 @@ def require_current_user(authorization: str | None = Header(None)) -> UserRecord
     except AuthError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
     return ai_access_service.ensure_user(principal.openid)
+
+
+def require_admin(authorization: str | None = Header(None)) -> AdminPrincipal:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing admin token")
+    token = authorization.removeprefix("Bearer ").strip()
+    try:
+        return admin_token_service.verify(token)
+    except AuthError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
 
 
 def get_wechat_pay_client():
@@ -147,6 +164,15 @@ def palette() -> PaletteResponse:
     return PaletteResponse(version=PALETTE_VERSION, colors=get_palette())
 
 
+@app.post("/api/admin/login", response_model=AdminLoginResponse)
+def admin_login(payload: AdminLoginRequest) -> AdminLoginResponse:
+    try:
+        token, expires_at = admin_token_service.issue(payload.username, payload.password)
+    except AuthError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    return AdminLoginResponse(adminToken=token, expiresAt=expires_at.isoformat())
+
+
 @app.post("/api/auth/wechat/login", response_model=WechatLoginResponse)
 def wechat_login(payload: WechatLoginRequest) -> WechatLoginResponse:
     try:
@@ -210,6 +236,22 @@ def create_admin_codes(payload: CreateAdminCodesRequest, x_admin_api_key: str | 
     if not expected_key or x_admin_api_key != expected_key:
         raise HTTPException(status_code=401, detail="Invalid admin API key")
     return CreateAdminCodesResponse(codes=ai_access_service.create_admin_codes(payload.count, created_by="api"))
+
+
+@app.post("/api/admin/ai-access/keys", response_model=CreateAccessKeysResponse)
+def create_access_keys(payload: CreateAccessKeysRequest, admin: AdminPrincipal = Depends(require_admin)) -> CreateAccessKeysResponse:
+    try:
+        return CreateAccessKeysResponse(keys=ai_access_service.create_access_keys(payload.count, payload.usesPerCode, created_by=admin.username, expires_at=payload.expiresAt))
+    except AiAccessError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/ai-access/keys/summary", response_model=AccessKeySummary)
+def access_key_summary(payload: AccessKeySummaryRequest) -> AccessKeySummary:
+    try:
+        return ai_access_service.get_access_key_summary(payload.code)
+    except AiAccessError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.post("/api/pattern-size/recommendation", response_model=PatternSizeRecommendation)
@@ -279,10 +321,10 @@ async def create_ai_image(
     aiEffect3d: str = Form("balanced"),
     aiShading: str = Form("step"),
     aiMaxColors: int = Form(16),
-    current_user: UserRecord = Depends(require_current_user),
+    accessCode: str = Form(...),
 ) -> AiImageResponse:
     LOGGER.info(
-        "ai_image endpoint_received width_cells=%s height_cells=%s ai_detail=%s ai_style=%s ai_effect_3d=%s ai_shading=%s ai_max_colors=%s user_id=%s",
+        "ai_image endpoint_received width_cells=%s height_cells=%s ai_detail=%s ai_style=%s ai_effect_3d=%s ai_shading=%s ai_max_colors=%s access_code=%s",
         widthCells,
         heightCells,
         aiDetail,
@@ -290,14 +332,14 @@ async def create_ai_image(
         aiEffect3d,
         aiShading,
         aiMaxColors,
-        current_user.id,
+        accessCode,
     )
     validate_generation_controls(widthCells, heightCells, "resample")
     validate_ai_controls(aiDetail, aiStyle, aiEffect3d, aiShading, aiMaxColors)
-    free_access_expires_at = ai_access_service.get_active_free_access_expiry(current_user.id)
-    remaining_quota = ai_access_service.get_remaining_quota(current_user.id)
-    if free_access_expires_at is None and remaining_quota <= 0:
-        raise HTTPException(status_code=403, detail="AI generation quota is required")
+    try:
+        access_key = ai_access_service.validate_access_key_for_generation(accessCode)
+    except AiAccessError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     image_bytes = await read_uploaded_image(image)
     ai_image = ai_image_store.create(
         image_bytes=image_bytes,
@@ -308,8 +350,7 @@ async def create_ai_image(
         ai_effect_3d=aiEffect3d,
         ai_shading=aiShading,
         ai_max_colors=aiMaxColors,
-        user_id=current_user.id,
-        used_free_access=free_access_expires_at is not None,
+        access_code=access_key.code,
     )
     LOGGER.info("ai_image endpoint_returning id=%s status=%s", ai_image.id, ai_image.status)
     return AiImageResponse(aiImageId=ai_image.id, status=ai_image.status, imageUrl=ai_image_url(ai_image.id) if ai_image.image_bytes else None)

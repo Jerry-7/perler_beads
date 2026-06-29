@@ -145,3 +145,33 @@ export interface RedeemAdminCodeResponse {
   hasFreeAccess: boolean;
   freeAccessExpiresAt: string;
 }
+
+export interface AccessKeySummary {
+  code: string;
+  totalUses: number;
+  usedCount: number;
+  remainingUses: number;
+  status: string;
+  expiresAt?: string | null;
+  canGenerateAi: boolean;
+}
+
+export interface AdminLoginResponse {
+  adminToken: string;
+  expiresAt: string;
+}
+
+export interface AccessKeyItem {
+  code: string;
+  totalUses: number;
+  usedCount: number;
+  remainingUses: number;
+  status: string;
+  expiresAt?: string | null;
+  createdAt: string;
+  createdBy: string;
+}
+
+export interface CreateAccessKeysResponse {
+  keys: AccessKeyItem[];
+}

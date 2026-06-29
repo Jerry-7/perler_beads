@@ -1,9 +1,13 @@
 import { API_BASE_URL } from "./config";
 import { authHeader } from "./auth";
+import { adminAuthHeader } from "./adminAuth";
 import type {
+  AccessKeySummary,
+  AdminLoginResponse,
   AiAccessSummary,
   AiImageStatus,
   AiPackageOffer,
+  CreateAccessKeysResponse,
   CreateAiOrderResponse,
   GenerationStatus,
   PaletteColor,
@@ -118,6 +122,7 @@ export interface CreateAiImageInput {
   aiStyle: AiStyle;
   aiEffect3d: AiEffect3d;
   aiShading: AiShading;
+  accessCode: string;
 }
 
 export interface AnalyzePatternDebugInput {
@@ -226,7 +231,6 @@ export function createAiImage(input: CreateAiImageInput): Promise<AiImageStatus>
       url: `${API_BASE_URL}/api/ai-images`,
       filePath: input.imagePath,
       name: "image",
-      header: authHeader(),
       formData: buildAiImageFormData(input),
       success(response) {
         if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -243,6 +247,40 @@ export function createAiImage(input: CreateAiImageInput): Promise<AiImageStatus>
         reject(new Error(error.errMsg));
       }
     });
+  });
+}
+
+export function getAccessKeySummary(code: string): Promise<AccessKeySummary> {
+  return request<AccessKeySummary>({
+    url: `${API_BASE_URL}/api/ai-access/keys/summary`,
+    method: "POST",
+    header: { "content-type": "application/json" },
+    data: { code }
+  });
+}
+
+export function adminLogin(username: string, password: string): Promise<AdminLoginResponse> {
+  return request<AdminLoginResponse>({
+    url: `${API_BASE_URL}/api/admin/login`,
+    method: "POST",
+    header: { "content-type": "application/json" },
+    data: { username, password }
+  });
+}
+
+export function createAccessKeys(count: number, usesPerCode: number, expiresAt?: string): Promise<CreateAccessKeysResponse> {
+  return request<CreateAccessKeysResponse>({
+    url: `${API_BASE_URL}/api/admin/ai-access/keys`,
+    method: "POST",
+    header: {
+      "content-type": "application/json",
+      ...adminAuthHeader()
+    },
+    data: {
+      count,
+      usesPerCode,
+      expiresAt: expiresAt || undefined
+    }
   });
 }
 

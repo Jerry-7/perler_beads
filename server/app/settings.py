@@ -9,15 +9,68 @@ from app.providers.mock_pixel_art import MockPixelArtProvider, PixelArtProviderE
 DEFAULT_AI_IMAGE_API_URL = "https://www.packyapi.com/v1/images/edits"
 DEFAULT_AI_IMAGE_MODEL = "gpt-image-2"
 DEFAULT_AI_IMAGE_PROMPT = (
-    "A {resolution}x{resolution} pixel art sprite/pattern, strictly based on the provided photo. "
-    "Primary goal: preserve the subject likeness, silhouette, key colors, iconic features, and mood. "
-    "If the subject is a person or animal, extract expressive facial/body cues; otherwise preserve the object's "
-    "distinct shape, material cues, and recognizable details. Generation style: {style_prompt}. "
-    "Detail level: {ai_detail}. 3D effect: {effect_3d}. Shading: {shading}. "
-    "Designed as a physical Perler bead pattern on a clear grid of {size} cells to aid placement. Strict crafting constraints: max {max_colors} colors, "
-    "bold 1-pixel dark outlines, no anti-aliasing, no smooth gradients, connected pixel clusters, "
-    "zero isolated floating pixels, solid light-gray background. Dynamic and expressive. "
-    "Negative prompt: {negative_prompt}."
+    '''
+    
+    
+    Create a {resolution}x{resolution} pixel art sprite/pattern, strictly derived from the provided photo.
+    
+    CRITICAL: The output image dimensions MUST be exactly {resolution}x{resolution} pixels. 
+        Use nearest-neighbor scaling logic. Every pixel must be a SOLID, FLAT color. 
+        NO anti-aliasing, NO color mixing at edges, NO alpha transparency. 
+        Do NOT draw grid lines on the image. Background is solid light gray.
+    
+    Rules:
+    - Output must be a square grid pixel art design.
+    - Each pixel cell represents exactly one bead.
+    - No gradients, no anti-aliasing, no shading.
+    - Each cell must be a single flat solid color only.
+    - Strong edge clarity and blocky structure.
+    
+    PRIMARY GOALS:
+    - Preserve the subject's likeness, silhouette, key colors, iconic features, and mood.
+    - For people/animals: extract expressive facial/body cues. For objects: retain distinct shape, material hints, and recognizable details.
+    
+    CRAFTING CONSTRAINTS (Perler bead / fuse bead pattern):
+    - The output MUST be a clear, gridded diagram where each cell is exactly 1 pixel.
+    - Every grid cell contains ONE solid, flat color (no gradients, no anti-aliasing, no dithering).
+    - Grid lines are visible (light gray or thin black borders) to separate each bead position.
+    - Maximum number of unique colors: {max_colors}.
+    - Use bold 1‑pixel dark outlines around major shapes.
+    - All colored pixels must form connected clusters (no isolated single pixels floating alone).
+    - Background: solid light gray (#E0E0E0 or similar) – clearly different from the subject.
+    
+    STYLE & DETAIL:
+    - Generation style: {style_prompt}.
+    - Detail level: {ai_detail}.
+    - 3D effect: {effect_3d} (if applicable, only via shading).
+    - Shading: {shading} (must be blocky, using distinct color steps, not smooth).
+    
+    ADDITIONAL INSTRUCTIONS:
+    - The image must look like a ready‑to‑use bead placement chart – each pixel corresponds to one bead position.
+    - Ensure the whole subject fits comfortably within the {resolution}x{resolution} grid with adequate margins.
+    - Expression: dynamic and expressive within the pixel limitation.
+    
+    NEGATIVE PROMPT:
+    {negative_prompt} (explicitly forbid: anti‑aliasing, gradients, dithering, semi‑transparent pixels, floating orphan pixels, blur, smooth shading, and non‑grid layouts).
+    '''
+    # '''
+    # A {resolution}x{resolution} pixel art sprite/pattern, strictly based on the provided photo.
+    # Primary goal: preserve the subject likeness, silhouette, key colors, iconic features, and mood.
+    # If the subject is a person or animal, extract expressive facial/body cues; otherwise preserve the object's distinct shape, material cues, and recognizable details. Generation style: {style_prompt}.
+    # Detail level: {ai_detail}. 3D effect: {effect_3d}. Shading: {shading}.
+    # Designed as a physical Perler bead pegboard pattern. Maximum {max_colors} distinct solid colors.
+    # Grid requirement: The image MUST feature a clear, visible thin black grid overlay, dividing the artwork into a strict square grid (like graph paper). Each grid cell MUST contain ONLY ONE pure solid color block (1 cell = 1 bead). Hard pixel edges, stair-step shading only.
+    # Negative prompt: {negative_prompt}.
+    # '''
+    # "A {resolution}x{resolution} pixel art sprite/pattern, strictly based on the provided photo. "
+    # "Primary goal: preserve the subject likeness, silhouette, key colors, iconic features, and mood. "
+    # "If the subject is a person or animal, extract expressive facial/body cues; otherwise preserve the object's "
+    # "distinct shape, material cues, and recognizable details. Generation style: {style_prompt}. "
+    # "Detail level: {ai_detail}. 3D effect: {effect_3d}. Shading: {shading}. "
+    # "Designed as a physical Perler bead pattern on a clear grid of {size} cells to aid placement. Strict crafting constraints: max {max_colors} colors, "
+    # "bold 1-pixel dark outlines, no anti-aliasing, no smooth gradients, connected pixel clusters, "
+    # "zero isolated floating pixels, solid light-gray background. Dynamic and expressive. "
+    # "Negative prompt: {negative_prompt}."
 )
 
 
@@ -46,6 +99,10 @@ class AiImageSettings:
     wechat_pay_platform_cert_path: str = ""
     wechat_pay_notify_url: str = ""
     ai_admin_api_key: str = ""
+    ai_admin_username: str = "admin"
+    ai_admin_password: str = ""
+    ai_admin_token_secret: str = "change-me-admin"
+    ai_admin_token_ttl_hours: int = 8
     session_token_secret: str = "change-me"
     session_token_ttl_days: int = 7
     sqlite_db_path: str = "./data/perler_beads.sqlite3"
@@ -76,6 +133,10 @@ def load_settings() -> AiImageSettings:
         wechat_pay_platform_cert_path=os.getenv("WECHAT_PAY_PLATFORM_CERT_PATH", "").strip(),
         wechat_pay_notify_url=os.getenv("WECHAT_PAY_NOTIFY_URL", "").strip(),
         ai_admin_api_key=os.getenv("AI_ADMIN_API_KEY", "").strip(),
+        ai_admin_username=os.getenv("AI_ADMIN_USERNAME", "admin").strip() or "admin",
+        ai_admin_password=os.getenv("AI_ADMIN_PASSWORD", "").strip(),
+        ai_admin_token_secret=os.getenv("AI_ADMIN_TOKEN_SECRET", "change-me-admin").strip() or "change-me-admin",
+        ai_admin_token_ttl_hours=int(os.getenv("AI_ADMIN_TOKEN_TTL_HOURS", "8")),
         session_token_secret=os.getenv("SESSION_TOKEN_SECRET", "change-me").strip() or "change-me",
         session_token_ttl_days=int(os.getenv("SESSION_TOKEN_TTL_DAYS", "7")),
         sqlite_db_path=os.getenv("SQLITE_DB_PATH", "./data/perler_beads.sqlite3").strip() or "./data/perler_beads.sqlite3",

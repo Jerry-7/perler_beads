@@ -22,6 +22,7 @@ export interface AiImageFormDataInput {
   aiStyle: AiStyle;
   aiEffect3d: AiEffect3d;
   aiShading: AiShading;
+  accessCode: string;
 }
 
 export function buildGenerationFormData(input: GenerationFormDataInput): Record<string, string> {
@@ -46,6 +47,7 @@ export function buildAiImageFormData(input: AiImageFormDataInput): Record<string
     aiDetail: input.aiDetail,
     aiStyle: input.aiStyle,
     aiEffect3d: input.aiEffect3d,
-    aiShading: input.aiShading
+    aiShading: input.aiShading,
+    accessCode: input.accessCode
   };
 }

@@ -11,7 +11,7 @@ import app.services.ai_images as ai_images_module
 from app.main import app
 from app.services.ai_access import AiAccessService
 from app.models import AiOrderPaymentParams
-from app.services.auth import AuthError, SessionTokenService
+from app.services.auth import AdminTokenService, AuthError, SessionTokenService
 from app.services.storage import Database
 
 
@@ -76,11 +76,13 @@ def access_env(tmp_path: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
     db.initialize()
     access_service = AiAccessService(db)
     token_service = SessionTokenService("test-secret", 7)
+    admin_token_service = AdminTokenService("admin", "secret", "admin-secret", 8)
     pay_client = FakeWechatPayClient()
     monkeypatch.setenv("AI_ADMIN_API_KEY", "test-admin-key")
 
     monkeypatch.setattr(main_module, "ai_access_service", access_service)
     monkeypatch.setattr(main_module, "session_token_service", token_service)
+    monkeypatch.setattr(main_module, "admin_token_service", admin_token_service)
     monkeypatch.setattr(main_module, "wechat_auth_client", FakeWechatAuthClient())
     monkeypatch.setattr(main_module, "wechat_pay_client", pay_client)
     monkeypatch.setattr(ai_images_module, "ai_access_service", access_service)
@@ -89,6 +91,7 @@ def access_env(tmp_path: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
         "access_service": access_service,
         "token_service": token_service,
         "pay_client": pay_client,
+        "admin_token_service": admin_token_service,
     }
 
 
@@ -142,48 +145,74 @@ def test_create_admin_codes_requires_admin_key_and_redeem_grants_free_access(acc
     assert redeem_response.json()["hasFreeAccess"] is True
 
 
-def test_ai_images_requires_authenticated_session(access_env) -> None:
+def admin_header(access_env) -> dict[str, str]:
+    token, _ = access_env["admin_token_service"].issue("admin", "secret")
+    return {"Authorization": f"Bearer {token}"}
+
+
+def test_admin_login_returns_admin_token(access_env) -> None:
+    response = client.post("/api/admin/login", json={"username": "admin", "password": "secret"})
+
+    assert response.status_code == 200
+    assert response.json()["adminToken"]
+
+
+def test_create_access_keys_requires_admin_token(access_env) -> None:
+    response = client.post("/api/admin/ai-access/keys", json={"count": 1, "usesPerCode": 3})
+
+    assert response.status_code == 401
+
+
+def test_create_access_keys_and_summary(access_env) -> None:
+    create_response = client.post(
+        "/api/admin/ai-access/keys",
+        json={"count": 2, "usesPerCode": 4},
+        headers=admin_header(access_env),
+    )
+
+    assert create_response.status_code == 200
+    key = create_response.json()["keys"][0]
+    assert key["totalUses"] == 4
+
+    summary_response = client.post("/api/ai-access/keys/summary", json={"code": key["code"]})
+    assert summary_response.status_code == 200
+    assert summary_response.json()["remainingUses"] == 4
+
+
+def test_ai_images_requires_access_key(access_env) -> None:
     response = client.post(
         "/api/ai-images",
         data={"widthCells": "8", "heightCells": "8"},
         files={"image": ("test.png", make_image(), "image/png")},
     )
 
-    assert response.status_code == 401
+    assert response.status_code == 422
 
 
-def test_ai_images_rejects_user_without_quota_or_free_access(access_env) -> None:
-    login_response = login()
-
+def test_ai_images_rejects_invalid_access_key(access_env) -> None:
     response = client.post(
         "/api/ai-images",
-        headers=auth_header(login_response["sessionToken"]),
-        data={"widthCells": "8", "heightCells": "8"},
+        data={"widthCells": "8", "heightCells": "8", "accessCode": "missing"},
         files={"image": ("test.png", make_image(), "image/png")},
     )
 
     assert response.status_code == 403
 
 
-def test_ai_images_allows_generation_when_user_has_quota(access_env, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ai_images_allows_generation_with_access_key(access_env, monkeypatch: pytest.MonkeyPatch) -> None:
     store = RecordingAiImageStore()
     monkeypatch.setattr(main_module, "ai_image_store", store)
-    login_response = login()
-    user = access_env["access_service"].ensure_user("openid-test")
-    order_no, _ = access_env["access_service"].create_order(user, "pkg_100_3")
-    access_env["access_service"].mark_order_paid(order_no, "txn-paid")
+    key = access_env["access_service"].create_access_keys(1, uses_per_code=3, created_by="tester")[0]
 
     response = client.post(
         "/api/ai-images",
-        headers=auth_header(login_response["sessionToken"]),
-        data={"widthCells": "8", "heightCells": "8"},
+        data={"widthCells": "8", "heightCells": "8", "accessCode": key.code},
         files={"image": ("test.png", make_image(), "image/png")},
     )
 
     assert response.status_code == 200
     assert store.created is not None
-    assert store.created["user_id"] == user.id
-    assert store.created["used_free_access"] is False
+    assert store.created["access_code"] == key.code
 
 
 def test_create_ai_order_returns_payment_params(access_env) -> None:

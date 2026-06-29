@@ -107,6 +107,16 @@ class AiImageStatusResponse(AiImageResponse):
     error: str | None = None
 
 
+class AdminLoginRequest(BaseModel):
+    username: str = Field(min_length=1)
+    password: str = Field(min_length=1)
+
+
+class AdminLoginResponse(BaseModel):
+    adminToken: str
+    expiresAt: str
+
+
 class UserSummary(BaseModel):
     openid: str
     createdAt: str
@@ -179,3 +189,38 @@ class AdminCodeItem(BaseModel):
 
 class CreateAdminCodesResponse(BaseModel):
     codes: list[AdminCodeItem]
+
+
+class AccessKeySummaryRequest(BaseModel):
+    code: str = Field(min_length=1)
+
+
+class AccessKeySummary(BaseModel):
+    code: str
+    totalUses: int
+    usedCount: int
+    remainingUses: int
+    status: str
+    expiresAt: str | None = None
+    canGenerateAi: bool
+
+
+class CreateAccessKeysRequest(BaseModel):
+    count: int = Field(default=1, ge=1, le=100)
+    usesPerCode: int = Field(default=1, ge=1, le=10000)
+    expiresAt: str | None = None
+
+
+class AccessKeyItem(BaseModel):
+    code: str
+    totalUses: int
+    usedCount: int
+    remainingUses: int
+    status: str
+    expiresAt: str | None = None
+    createdAt: str
+    createdBy: str
+
+
+class CreateAccessKeysResponse(BaseModel):
+    keys: list[AccessKeyItem]

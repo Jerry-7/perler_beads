@@ -4,6 +4,7 @@ import base64
 import hashlib
 import hmac
 import json
+import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -24,6 +25,12 @@ class WechatSession:
 @dataclass(frozen=True)
 class SessionPrincipal:
     openid: str
+    expires_at: datetime
+
+
+@dataclass(frozen=True)
+class AdminPrincipal:
+    username: str
     expires_at: datetime
 
 
@@ -94,6 +101,50 @@ class SessionTokenService:
         return SessionPrincipal(openid=openid, expires_at=expires_at)
 
 
+class AdminTokenService:
+    def __init__(self, username: str, password: str, secret: str, ttl_hours: int) -> None:
+        self._username = username
+        self._password = password
+        self._secret = secret.encode('utf-8')
+        self._ttl_hours = ttl_hours
+
+    def issue(self, username: str, password: str) -> tuple[str, datetime]:
+        if not self._password:
+            raise AuthError('admin password is not configured')
+        if not secrets.compare_digest(username, self._username) or not secrets.compare_digest(password, self._password):
+            raise AuthError('invalid admin credentials')
+        expires_at = datetime.now(UTC) + timedelta(hours=self._ttl_hours)
+        payload = {'username': username, 'exp': expires_at.isoformat()}
+        body = json.dumps(payload, separators=(',', ':')).encode('utf-8')
+        encoded = base64.urlsafe_b64encode(body).decode('ascii').rstrip('=')
+        signature = hmac.new(self._secret, encoded.encode('ascii'), hashlib.sha256).hexdigest()
+        return f'{encoded}.{signature}', expires_at
+
+    def verify(self, token: str) -> AdminPrincipal:
+        try:
+            encoded, signature = token.split('.', 1)
+        except ValueError as exc:
+            raise AuthError('invalid admin token') from exc
+        expected = hmac.new(self._secret, encoded.encode('ascii'), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(signature, expected):
+            raise AuthError('invalid admin token signature')
+        padding = '=' * (-len(encoded) % 4)
+        try:
+            payload = json.loads(base64.urlsafe_b64decode(encoded + padding).decode('utf-8'))
+        except Exception as exc:
+            raise AuthError('invalid admin token payload') from exc
+        username = payload.get('username')
+        expires_at_raw = payload.get('exp')
+        if not isinstance(username, str) or not isinstance(expires_at_raw, str):
+            raise AuthError('invalid admin token payload')
+        expires_at = datetime.fromisoformat(expires_at_raw)
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=UTC)
+        if expires_at <= datetime.now(UTC):
+            raise AuthError('admin token expired')
+        return AdminPrincipal(username=username, expires_at=expires_at)
+
+
 def create_wechat_auth_client(transport: httpx.BaseTransport | None = None) -> WechatAuthClient:
     settings = load_settings()
     return WechatAuthClient(settings.wechat_app_id, settings.wechat_app_secret, transport=transport)
@@ -102,3 +153,13 @@ def create_wechat_auth_client(transport: httpx.BaseTransport | None = None) -> W
 def create_session_token_service() -> SessionTokenService:
     settings = load_settings()
     return SessionTokenService(settings.session_token_secret, settings.session_token_ttl_days)
+
+
+def create_admin_token_service() -> AdminTokenService:
+    settings = load_settings()
+    return AdminTokenService(
+        settings.ai_admin_username,
+        settings.ai_admin_password,
+        settings.ai_admin_token_secret,
+        settings.ai_admin_token_ttl_hours,
+    )

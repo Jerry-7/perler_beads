@@ -1,33 +1,35 @@
 <view class="ai-access-page">
   <view class="access-summary">
-    <text class="summary-kicker">AI 生图权益</text>
+    <text class="summary-kicker">AI 权限码</text>
     <text class="summary-title">{{accessText}}</text>
-    <text class="summary-desc">AI 生图成功后扣 1 次；管理员免费期内不扣次数。</text>
-  </view>
-
-  <view class="section-heading">
-    <text>购买套餐</text>
-  </view>
-  <view class="package-list">
-    <button
-      wx:for="{{packages}}"
-      wx:key="code"
-      class="package-card"
-      loading="{{isPaying}}"
-      data-code="{{item.code}}"
-      bindtap="buyPackage"
-    >
-      <text class="package-price">{{item.priceText}}</text>
-      <text class="package-quota">{{item.quotaText}}</text>
-      <text class="package-action">购买</text>
-    </button>
+    <text class="summary-desc">AI 生图成功后才会扣除 1 次额度，失败不会扣次。</text>
   </view>
 
   <view class="redeem-panel">
-    <text class="redeem-title">管理员权限码</text>
-    <view class="redeem-row">
-      <input class="redeem-input" placeholder="输入 24 小时免费权限码" value="{{redeemCode}}" bindinput="onRedeemCodeInput" />
-      <button class="redeem-button" loading="{{isRedeeming}}" bindtap="redeemCode">兑换</button>
+    <text class="redeem-title">权限码</text>
+    <view class="redeem-column">
+      <textarea
+        class="redeem-input"
+        placeholder="AI-XXXXXXXXXXXX"
+        auto-height="{{false}}"
+        show-confirm-bar="{{false}}"
+        cursor-spacing="24"
+        bindinput="onAccessCodeInput"
+      ></textarea>
+      <button class="redeem-button" loading="{{isLoading}}" bindtap="saveAndRefresh">保存</button>
+    </view>
+    <text class="saved-code" wx:if="{{hasSavedCode}}">当前权限码：{{accessCode}}</text>
+    <view class="action-row">
+      <button class="secondary-button" loading="{{isLoading}}" bindtap="pasteAccessCode">粘贴</button>
+      <button class="secondary-button" loading="{{isLoading}}" bindtap="refreshAccess">刷新</button>
+      <button class="secondary-button" wx:if="{{hasSavedCode}}" bindtap="clearSavedCode">清除</button>
     </view>
   </view>
+
+  <view class="detail-panel" wx:if="{{status}}">
+    <text class="detail-line">状态：{{status}}</text>
+    <text class="detail-line">次数：剩余 {{remainingUses}} / 总计 {{totalUses}}</text>
+  </view>
+
+  <button class="admin-link" bindtap="openAdminPage">管理员入口</button>
 </view>

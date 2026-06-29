@@ -59,3 +59,51 @@ def test_redeem_admin_code_grants_free_access_for_twenty_four_hours(tmp_path) ->
 
     assert expires_datetime > datetime.now(UTC) + timedelta(hours=23, minutes=59)
     assert service.get_active_free_access_expiry(user.id) == expires_at
+
+
+def test_access_key_summary_reports_remaining_uses(tmp_path) -> None:
+    service = create_service(tmp_path)
+    key = service.create_access_keys(1, uses_per_code=3, created_by="tester")[0]
+
+    summary = service.get_access_key_summary(key.code)
+
+    assert summary.totalUses == 3
+    assert summary.usedCount == 0
+    assert summary.remainingUses == 3
+    assert summary.canGenerateAi is True
+
+
+def test_debit_access_key_for_ai_image_only_happens_once(tmp_path) -> None:
+    service = create_service(tmp_path)
+    key = service.create_access_keys(1, uses_per_code=2, created_by="tester")[0]
+
+    service.register_ai_image_key_job("job-key-1", key.code)
+    service.debit_access_key_for_ai_image_if_needed("job-key-1", succeeded=True)
+    service.debit_access_key_for_ai_image_if_needed("job-key-1", succeeded=True)
+
+    summary = service.get_access_key_summary(key.code)
+    assert summary.usedCount == 1
+    assert summary.remainingUses == 1
+
+
+def test_debit_access_key_skips_failed_jobs(tmp_path) -> None:
+    service = create_service(tmp_path)
+    key = service.create_access_keys(1, uses_per_code=2, created_by="tester")[0]
+
+    service.register_ai_image_key_job("job-key-failed", key.code)
+    service.debit_access_key_for_ai_image_if_needed("job-key-failed", succeeded=False)
+
+    summary = service.get_access_key_summary(key.code)
+    assert summary.remainingUses == 2
+
+
+def test_exhausted_access_key_cannot_generate(tmp_path) -> None:
+    service = create_service(tmp_path)
+    key = service.create_access_keys(1, uses_per_code=1, created_by="tester")[0]
+
+    service.register_ai_image_key_job("job-key-last", key.code)
+    service.debit_access_key_for_ai_image_if_needed("job-key-last", succeeded=True)
+
+    summary = service.get_access_key_summary(key.code)
+    assert summary.status == "exhausted"
+    assert summary.canGenerateAi is False
