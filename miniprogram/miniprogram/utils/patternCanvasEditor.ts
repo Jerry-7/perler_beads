@@ -1,5 +1,5 @@
 import type { PatternCell, PatternResult } from "./types";
-import { recalculateUsage } from "./patternEditing";
+import { applyUsagePatch, recalculateUsage } from "./patternEditing";
 
 export interface EditorPointInput {
   x: number;
@@ -86,6 +86,21 @@ export function getCellFromEditorTouchPoint(
     touch: { pageX?: number; pageY?: number; clientX?: number; clientY?: number; x?: number; y?: number };
   }
 ): EditorCellPosition | null {
+  // 优先使用 canvas-relative 坐标 (touch.x / touch.y)，因为它们是
+  // WeChat Canvas 2D 原生坐标，不依赖 createSelectorQuery 异步获取的
+  // editorCanvasRectLeft/Top 的准确性。
+  if (typeof input.touch.x === "number" && typeof input.touch.y === "number") {
+    const cell = getCellFromEditorPoint({
+      ...input,
+      x: input.viewportLeft + input.touch.x,
+      y: input.viewportTop + input.touch.y
+    });
+    if (cell) {
+      return cell;
+    }
+  }
+
+  // 回退到 pageX/pageY（页面坐标），依赖 resolveEditorTouchPoint 提取
   const viewportPoint = resolveEditorTouchPoint({
     touch: input.touch,
     viewportLeft: input.viewportLeft,
@@ -94,14 +109,6 @@ export function getCellFromEditorTouchPoint(
   const viewportCell = getCellFromEditorPoint({ ...input, x: viewportPoint.x, y: viewportPoint.y });
   if (viewportCell) {
     return viewportCell;
-  }
-
-  if (typeof input.touch.x === "number" && typeof input.touch.y === "number") {
-    return getCellFromEditorPoint({
-      ...input,
-      x: input.viewportLeft + input.touch.x,
-      y: input.viewportTop + input.touch.y
-    });
   }
 
   return null;
@@ -195,6 +202,7 @@ export function applyEditorPatch(result: PatternResult, patch: EditorPatch, dire
   }
   const rowMap = new Map<number, PatternCell[]>();
   const nextCells = [...result.cells];
+  const appliedChanges: Array<{ beforeCell: PatternCell; afterCell: PatternCell }> = [];
   for (const change of patch.changes) {
     const sourceRow = result.cells[change.row];
     if (!sourceRow || !sourceRow[change.col]) {
@@ -206,12 +214,21 @@ export function applyEditorPatch(result: PatternResult, patch: EditorPatch, dire
       rowMap.set(change.row, nextRow);
       nextCells[change.row] = nextRow;
     }
-    nextRow[change.col] = direction === "undo" ? change.beforeCell : change.afterCell;
+    const targetCell = direction === "undo" ? change.beforeCell : change.afterCell;
+    nextRow[change.col] = targetCell;
+    appliedChanges.push({ beforeCell: sourceRow[change.col], afterCell: targetCell });
   }
+
+  // 增量更新：当变更量小于总 cell 数一半时使用增量方式，避免全量遍历
+  const totalCells = result.cells.length * (result.cells[0]?.length ?? 0);
+  const usage = appliedChanges.length <= totalCells / 2
+    ? applyUsagePatch(result.usage, appliedChanges)
+    : recalculateUsage(nextCells);
+
   return {
     ...result,
     cells: nextCells,
-    usage: recalculateUsage(nextCells)
+    usage,
   };
 }
 

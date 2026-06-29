@@ -33,7 +33,7 @@ import {
   type EditorPatchType
 } from "../../utils/patternCanvasEditor";
 import { shouldDrawCellLabel } from "../../utils/patternDrawing";
-import { filterPaletteColors, replacePatternCellColor } from "../../utils/patternEditing";
+import { filterPaletteColors } from "../../utils/patternEditing";
 import { previewPatternImage } from "../../utils/patternPreview";
 import { applyPatternSizeOption, PATTERN_SIZE_OPTIONS } from "../../utils/patternSizeOptions";
 import { buildPatternSizeWarning } from "../../utils/patternSizeWarning";
@@ -41,7 +41,7 @@ import { formatTraceCellStatus, getCanvasPointFromEvent, getPatternCellFromPoint
 import { saveImageWithAlbumPermission } from "../../utils/photoAlbum";
 import { AI_ACCESS_ROUTE } from "../../utils/routes";
 import { DEFAULT_SAMPLING_MODE_INDEX, SAMPLING_MODE_OPTIONS, type SamplingMode } from "../../utils/samplingModeOptions";
-import type { AccessKeySummary, BeadUsage, PaletteColor, PatternCell, PatternResult, PatternSizeRecommendation, Rgb } from "../../utils/types";
+import type { AccessKeySummary, BeadCell, BeadUsage, PaletteColor, PatternCell, PatternResult, PatternSizeRecommendation, RawColorCell, Rgb } from "../../utils/types";
 import { isBeadCell, isEmptyCell } from "../../utils/types";
 
 type PatternSource = "original" | "ai";
@@ -59,6 +59,7 @@ let editorDrawPending = false;
 let editorStrokeDirty = false;
 let editorCanvasCache: { canvas: WechatMiniprogram.Canvas; context: CanvasContextLike; width: number; height: number; pixelRatio: number } | null = null;
 let editorStrokePatchCache: EditorPatch | null = null;
+let editorRulerCache: { translateX: number; translateY: number; scale: number } | null = null;
 
 type CanvasContextLike = {
   save(): void;
@@ -969,9 +970,7 @@ Page({
       selectedBatchEditColorText: `${paletteColor.code} ${paletteColor.name}`,
       editCandidateColors: this.buildEditCandidateColors(paletteColor.code)
     });
-    wx.nextTick(() => {
-      this.drawEditorCanvas();
-    });
+    // 换颜色本身不影响 canvas 内容，无需重绘
   },
   highlightUsageColor(event: WechatMiniprogram.TouchEvent) {
     const code = event.currentTarget.dataset.code as string | undefined;
@@ -1320,11 +1319,16 @@ Page({
       if (isBeadCell(beforeCell) && beforeCell.beadCode === paletteColor.code) {
         continue;
       }
-      const afterResult = replacePatternCellColor(result, position.row, position.col, paletteColor);
-      const afterCell = afterResult.cells[position.row]?.[position.col];
-      if (!afterCell || afterCell === beforeCell) {
-        continue;
-      }
+      // 直接构造 afterCell，避免 replacePatternCellColor 的数组拷贝开销
+      const afterCell: BeadCell = {
+        x: beforeCell.x,
+        y: beforeCell.y,
+        sourceRgb: (beforeCell as BeadCell | RawColorCell).sourceRgb,
+        beadCode: paletteColor.code,
+        beadName: paletteColor.name,
+        beadRgb: paletteColor.rgb,
+        distance: 0,
+      };
       changes.push({ row: position.row, col: position.col, beforeCell, afterCell });
     }
     return { type, label, selectedKey, changes };
@@ -1657,6 +1661,17 @@ Page({
       return;
     }
 
+    const currentTranslate = {
+      translateX: this.data.editorTranslateX,
+      translateY: this.data.editorTranslateY,
+      scale: this.data.editorScale,
+    };
+    const rulerChanged =
+      !editorRulerCache ||
+      editorRulerCache.translateX !== currentTranslate.translateX ||
+      editorRulerCache.translateY !== currentTranslate.translateY ||
+      editorRulerCache.scale !== currentTranslate.scale;
+
     const drawWithCanvas = (canvas: WechatMiniprogram.Canvas, context: CanvasContextLike) => {
       const width = this.data.editorCanvasCssWidth;
       const height = this.data.editorCanvasCssHeight;
@@ -1665,12 +1680,17 @@ Page({
         canvas.width = width * pixelRatio;
         canvas.height = height * pixelRatio;
         editorCanvasCache = { canvas, context, width, height, pixelRatio };
+        // Canvas 尺寸变化，标尺必须重绘
+        editorRulerCache = null;
       }
       context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
       context.clearRect(0, 0, width, height);
       context.fillStyle = "#f8fafc";
       context.fillRect(0, 0, width, height);
-      this.drawEditorRulers(context, result);
+      if (rulerChanged || !editorRulerCache) {
+        this.drawEditorRulers(context, result);
+        editorRulerCache = { ...currentTranslate };
+      }
       this.drawEditorCells(context, result);
     };
 
@@ -1750,36 +1770,65 @@ Page({
     context.clip();
     context.fillStyle = "#ffffff";
     context.fillRect(originX, originY, patternWidth, patternHeight);
-    context.textAlign = "center";
-    context.textBaseline = "middle";
-    if (drawLabels) {
-      context.font = `${Math.max(8, Math.floor(cellSize * 0.32))}px sans-serif`;
-    }
 
     const visible = this.visibleEditorCellRange(result, originX, originY, cellSize);
+
+    // 按 (颜色, alpha) 分组批量绘制，减少 fillStyle 切换和独立 API 调用
+    const colorGroups = new Map<string, Array<{ x: number; y: number }>>();
+    const labelCells: Array<{ x: number; y: number; label: string; rgb: Rgb; beadCode: string }> = [];
+
     for (let rowIndex = visible.startRow; rowIndex <= visible.endRow; rowIndex += 1) {
       const row = result.cells[rowIndex];
-      if (!row) {
-        continue;
-      }
+      if (!row) continue;
       for (let colIndex = visible.startCol; colIndex <= visible.endCol; colIndex += 1) {
         const cell = row[colIndex];
-        if (!cell) {
-          continue;
-        }
+        if (!cell) continue;
         const x = originX + cell.x * cellSize;
         const y = originY + cell.y * cellSize;
         const displayRgb = isBeadCell(cell) ? cell.beadRgb : isEmptyCell(cell) ? [248, 250, 252] : cell.sourceRgb;
-        context.fillStyle = `rgb(${displayRgb[0]}, ${displayRgb[1]}, ${displayRgb[2]})`;
-        context.globalAlpha = highlighted && isBeadCell(cell) && cell.beadCode !== highlighted ? 0.28 : 1;
-        context.fillRect(x, y, cellSize, cellSize);
+        const alphaKey = highlighted && isBeadCell(cell) && cell.beadCode !== highlighted ? "dim" : "full";
+        const colorKey = `${displayRgb[0]},${displayRgb[1]},${displayRgb[2]}|${alphaKey}`;
+        let group = colorGroups.get(colorKey);
+        if (!group) {
+          group = [];
+          colorGroups.set(colorKey, group);
+        }
+        group.push({ x, y });
         if (drawLabels && isBeadCell(cell)) {
-          context.fillStyle = this.textColorFor(displayRgb as Rgb);
-          context.globalAlpha = highlighted && cell.beadCode !== highlighted ? 0.35 : 0.95;
-          context.fillText(cell.beadCode, x + cellSize / 2, y + cellSize / 2);
+          labelCells.push({ x, y, label: cell.beadCode, rgb: displayRgb as Rgb, beadCode: cell.beadCode });
         }
       }
     }
+
+    // 批量绘制同色 + 同 alpha 的 cells
+    for (const [colorKey, cells] of colorGroups) {
+      const [rgbStr, alphaKey] = colorKey.split("|");
+      context.fillStyle = `rgb(${rgbStr})`;
+      context.globalAlpha = alphaKey === "dim" ? 0.28 : 1;
+      for (const { x, y } of cells) {
+        context.fillRect(x, y, cellSize, cellSize);
+      }
+    }
+
+    // 批量绘制文字标签
+    if (drawLabels && labelCells.length) {
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+      context.font = `${Math.max(8, Math.floor(cellSize * 0.32))}px sans-serif`;
+      const textColorCache = new Map<string, string>();
+      for (const { x, y, label, rgb, beadCode } of labelCells) {
+        const rgbKey = rgb.join(",");
+        let color = textColorCache.get(rgbKey);
+        if (!color) {
+          color = this.textColorFor(rgb);
+          textColorCache.set(rgbKey, color);
+        }
+        context.fillStyle = color;
+        context.globalAlpha = highlighted && beadCode !== highlighted ? 0.35 : 0.95;
+        context.fillText(label, x + cellSize / 2, y + cellSize / 2);
+      }
+    }
+
     context.globalAlpha = 1;
     this.drawEditorGrid(context, result, originX, originY, cellSize, visible);
     this.drawEditorGuides(context, result, originX, originY, cellSize, patternWidth, patternHeight);
@@ -1853,26 +1902,34 @@ Page({
     const startRow = visible ? Math.max(0, visible.startRow) : 0;
     const endRow = visible ? Math.min(result.heightCells, visible.endRow + 1) : result.heightCells;
     context.save();
+
+    // 按线型分三组批量 stroke，将 stroke 调用从 O(n+m) 降为固定的 3 次
+    const groups: Array<{ style: string; width: number; moves: Array<[number, number, number, number]> }> = [
+      { style: "#111827", width: 1.4, moves: [] },
+      { style: "#64748b", width: 1, moves: [] },
+      { style: "rgba(148, 163, 184, 0.55)", width: 0.5, moves: [] },
+    ];
+
     for (let col = startCol; col <= endCol; col += 1) {
       const x = originX + col * cellSize;
-      const isMajor = col % 10 === 0;
-      const isGroup = col % 5 === 0;
-      context.strokeStyle = isMajor ? "#111827" : isGroup ? "#64748b" : "rgba(148, 163, 184, 0.55)";
-      context.lineWidth = isMajor ? 1.4 : isGroup ? 1 : 0.5;
-      context.beginPath();
-      context.moveTo(x, originY);
-      context.lineTo(x, originY + height);
-      context.stroke();
+      const idx = col % 10 === 0 ? 0 : col % 5 === 0 ? 1 : 2;
+      groups[idx].moves.push([x, originY, x, originY + height]);
     }
     for (let row = startRow; row <= endRow; row += 1) {
       const y = originY + row * cellSize;
-      const isMajor = row % 10 === 0;
-      const isGroup = row % 5 === 0;
-      context.strokeStyle = isMajor ? "#111827" : isGroup ? "#64748b" : "rgba(148, 163, 184, 0.55)";
-      context.lineWidth = isMajor ? 1.4 : isGroup ? 1 : 0.5;
+      const idx = row % 10 === 0 ? 0 : row % 5 === 0 ? 1 : 2;
+      groups[idx].moves.push([originX, y, originX + width, y]);
+    }
+
+    for (const group of groups) {
+      if (!group.moves.length) continue;
+      context.strokeStyle = group.style;
+      context.lineWidth = group.width;
       context.beginPath();
-      context.moveTo(originX, y);
-      context.lineTo(originX + width, y);
+      for (const [mx, my, lx, ly] of group.moves) {
+        context.moveTo(mx, my);
+        context.lineTo(lx, ly);
+      }
       context.stroke();
     }
     context.restore();

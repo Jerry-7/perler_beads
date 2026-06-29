@@ -135,6 +135,47 @@ function updateUsageForReplacement(usage: BeadUsage[], oldCell: PatternCell, nex
   return Object.values(usageMap).sort((left, right) => left.beadCode.localeCompare(right.beadCode));
 }
 
+export interface UsageChange {
+  beforeCell: PatternCell;
+  afterCell: PatternCell;
+}
+
+/**
+ * 增量更新 usage —— 基于 patch changes 中的 beforeCell/afterCell，
+ * 避免 recalculateUsage 的全量 O(n×m) 遍历。
+ * 适用于批量编辑操作（单点、连涂、填充、撤销、重做）。
+ */
+export function applyUsagePatch(usage: BeadUsage[], changes: UsageChange[]): BeadUsage[] {
+  const usageMap: Record<string, BeadUsage> = {};
+  for (const item of usage) {
+    usageMap[item.beadCode] = { ...item, beadRgb: [...item.beadRgb] as Rgb };
+  }
+
+  for (const { beforeCell, afterCell } of changes) {
+    // 扣除旧颜色
+    if (isBeadCell(beforeCell) && usageMap[beforeCell.beadCode]) {
+      usageMap[beforeCell.beadCode].count -= 1;
+      if (usageMap[beforeCell.beadCode].count <= 0) {
+        delete usageMap[beforeCell.beadCode];
+      }
+    }
+    // 增加新颜色
+    if (isBeadCell(afterCell)) {
+      if (!usageMap[afterCell.beadCode]) {
+        usageMap[afterCell.beadCode] = {
+          beadCode: afterCell.beadCode,
+          beadName: afterCell.beadName,
+          beadRgb: afterCell.beadRgb,
+          count: 0,
+        };
+      }
+      usageMap[afterCell.beadCode].count += 1;
+    }
+  }
+
+  return Object.values(usageMap).sort((left, right) => left.beadCode.localeCompare(right.beadCode));
+}
+
 export function filterPaletteColors(colors: PaletteColor[], query: string, limit = 12): PaletteColor[] {
   const normalizedQuery = query.trim().toLowerCase();
   if (!normalizedQuery) {
