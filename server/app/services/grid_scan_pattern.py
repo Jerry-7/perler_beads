@@ -47,6 +47,8 @@ def process_grid_scan_bead_pattern(
 
     vertical_lines = detect_grid_lines(image, axis="x", expected_cells=target_width)
     horizontal_lines = detect_grid_lines(image, axis="y", expected_cells=target_height)
+    vertical_lines = force_expected_grid_size(vertical_lines, target_width)
+    horizontal_lines = force_expected_grid_size(horizontal_lines, target_height)
     width_cells = len(vertical_lines) - 1
     height_cells = len(horizontal_lines) - 1
     if width_cells <= 0 or height_cells <= 0:
@@ -104,6 +106,14 @@ def process_grid_scan_bead_pattern(
         generatedAt=datetime.now(UTC).isoformat(),
         rleRows=encode_grid_rows_as_rle(rows),
     )
+
+
+def force_expected_grid_size(lines: list[GridLine], expected_cells: int | None) -> list[GridLine]:
+    if expected_cells is None or expected_cells <= 0 or expected_cells > MAX_GRID_CELLS or len(lines) < 2:
+        return lines
+    if len(lines) == expected_cells + 1:
+        return lines
+    return interpolate_lines(float(lines[0].start), float(lines[-1].start), expected_cells, estimated_line_width(lines))
 
 
 def detect_grid_lines(image: Image.Image, axis: str, expected_cells: int | None = None) -> list[GridLine]:
