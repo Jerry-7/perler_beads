@@ -329,7 +329,7 @@ test("editor commits avoid sending full pattern data through setData", () => {
   assert(!setDataBody.includes("result: nextResult"), "commit should not send full pattern result through setData");
   assert(!setDataBody.includes("editorUndoStack:"), "commit should not send full undo stack through setData");
   assert(setDataBody.includes("editorUndoCount"), "commit should expose only undo count to WXML");
-  assert(pageTs.includes("pushEditorHistory"), "page should use the shared editor history abstraction");
+  assert(pageTs.includes("pushEditorPatchHistory"), "page should use the shared editor patch history abstraction");
   assert(!pageTs.includes("editorUndoStackCache"), "page should not keep a handwritten undo stack");
   assert(!pageTs.includes("editorRedoStackCache"), "page should not keep a handwritten redo stack");
 });

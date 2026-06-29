@@ -1,3 +1,6 @@
+import type { PatternCell, PatternResult } from "./types";
+import { recalculateUsage } from "./patternEditing";
+
 export interface EditorPointInput {
   x: number;
   y: number;
@@ -30,10 +33,25 @@ export interface EditorTouchDistanceInput {
   viewportTop: number;
 }
 
-export interface EditorHistory<T> {
-  past: T[];
-  current: T;
-  future: T[];
+export type EditorPatchType = "paint" | "stroke" | "fill";
+
+export interface EditorCellPatch {
+  row: number;
+  col: number;
+  beforeCell: PatternCell;
+  afterCell: PatternCell;
+}
+
+export interface EditorPatch {
+  type: EditorPatchType;
+  label: string;
+  selectedKey: string;
+  changes: EditorCellPatch[];
+}
+
+export interface EditorPatchHistory {
+  past: EditorPatch[];
+  future: EditorPatch[];
   limit: number;
 }
 
@@ -122,48 +140,78 @@ export function getEditorTouchDistance(input: EditorTouchDistanceInput): number 
   const deltaY = secondPoint.y - firstPoint.y;
   return Math.sqrt(deltaX * deltaX + deltaY * deltaY);
 }
-export function createEditorHistory<T>(current: T, limit = 20): EditorHistory<T> {
+export function createEditorPatchHistory(limit = 10): EditorPatchHistory {
   return {
     past: [],
-    current,
     future: [],
     limit
   };
 }
 
-export function pushEditorHistory<T>(history: EditorHistory<T>, next: T): EditorHistory<T> {
-  const past = [...history.past, history.current].slice(-history.limit);
+export function pushEditorPatchHistory(history: EditorPatchHistory, patch: EditorPatch): EditorPatchHistory {
+  if (!patch.changes.length) {
+    return history;
+  }
   return {
     ...history,
-    past,
-    current: next,
+    past: [...history.past, patch].slice(-history.limit),
     future: []
   };
 }
 
-export function undoEditorHistory<T>(history: EditorHistory<T>): EditorHistory<T> {
+export function undoEditorPatchHistory(history: EditorPatchHistory): { history: EditorPatchHistory; patch: EditorPatch | null } {
   if (!history.past.length) {
-    return history;
+    return { history, patch: null };
   }
-  const current = history.past[history.past.length - 1];
+  const patch = history.past[history.past.length - 1];
   return {
-    ...history,
-    past: history.past.slice(0, -1),
-    current,
-    future: [history.current, ...history.future]
+    patch,
+    history: {
+      ...history,
+      past: history.past.slice(0, -1),
+      future: [patch, ...history.future]
+    }
   };
 }
 
-export function redoEditorHistory<T>(history: EditorHistory<T>): EditorHistory<T> {
+export function redoEditorPatchHistory(history: EditorPatchHistory): { history: EditorPatchHistory; patch: EditorPatch | null } {
   if (!history.future.length) {
-    return history;
+    return { history, patch: null };
   }
-  const current = history.future[0];
+  const patch = history.future[0];
   return {
-    ...history,
-    past: [...history.past, history.current].slice(-history.limit),
-    current,
-    future: history.future.slice(1)
+    patch,
+    history: {
+      ...history,
+      past: [...history.past, patch].slice(-history.limit),
+      future: history.future.slice(1)
+    }
+  };
+}
+
+export function applyEditorPatch(result: PatternResult, patch: EditorPatch, direction: "undo" | "redo"): PatternResult {
+  if (!patch.changes.length) {
+    return result;
+  }
+  const rowMap = new Map<number, PatternCell[]>();
+  const nextCells = [...result.cells];
+  for (const change of patch.changes) {
+    const sourceRow = result.cells[change.row];
+    if (!sourceRow || !sourceRow[change.col]) {
+      continue;
+    }
+    let nextRow = rowMap.get(change.row);
+    if (!nextRow) {
+      nextRow = [...sourceRow];
+      rowMap.set(change.row, nextRow);
+      nextCells[change.row] = nextRow;
+    }
+    nextRow[change.col] = direction === "undo" ? change.beforeCell : change.afterCell;
+  }
+  return {
+    ...result,
+    cells: nextCells,
+    usage: recalculateUsage(nextCells)
   };
 }
 

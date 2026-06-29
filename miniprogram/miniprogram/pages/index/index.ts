@@ -14,22 +14,26 @@ import {
   type AiStyle
 } from "../../utils/aiGenerationOptions";
 import { aiImageProgressText, nextAiImageProgress } from "../../utils/aiImageProgress";
-import { ensureWechatSession } from "../../utils/auth";
-import { aiImageUrl, createAiImage, getAiImage, getGeneration, getMyAiAccess, getPalette, recommendPatternSize, uploadGeneration, type ColorComplexity } from "../../utils/api";
+import { getStoredAccessCode } from "../../utils/accessCode";
+import { aiImageUrl, createAiImage, getAccessKeySummary, getAiImage, getGeneration, getPalette, recommendPatternSize, uploadGeneration, type ColorComplexity } from "../../utils/api";
 import { calculatePreviewCanvasSize, calculateZoomedCanvasSize } from "../../utils/canvasSizing";
 import {
-  createEditorHistory,
+  applyEditorPatch,
+  createEditorPatchHistory,
   floodFillPattern,
   getCellFromEditorTouchPoint,
   getEditorTouchDistance,
-  pushEditorHistory,
-  redoEditorHistory,
+  pushEditorPatchHistory,
+  redoEditorPatchHistory,
   resolveEditorTouchPoint,
-  undoEditorHistory,
-  type EditorHistory
+  undoEditorPatchHistory,
+  type EditorCellPatch,
+  type EditorPatch,
+  type EditorPatchHistory,
+  type EditorPatchType
 } from "../../utils/patternCanvasEditor";
 import { shouldDrawCellLabel } from "../../utils/patternDrawing";
-import { filterPaletteColors, replacePatternCellColor, replacePatternCellsColor } from "../../utils/patternEditing";
+import { filterPaletteColors, replacePatternCellColor } from "../../utils/patternEditing";
 import { previewPatternImage } from "../../utils/patternPreview";
 import { applyPatternSizeOption, PATTERN_SIZE_OPTIONS } from "../../utils/patternSizeOptions";
 import { buildPatternSizeWarning } from "../../utils/patternSizeWarning";
@@ -37,7 +41,7 @@ import { formatTraceCellStatus, getCanvasPointFromEvent, getPatternCellFromPoint
 import { saveImageWithAlbumPermission } from "../../utils/photoAlbum";
 import { AI_ACCESS_ROUTE } from "../../utils/routes";
 import { DEFAULT_SAMPLING_MODE_INDEX, SAMPLING_MODE_OPTIONS, type SamplingMode } from "../../utils/samplingModeOptions";
-import type { AiAccessSummary, BeadUsage, PaletteColor, PatternCell, PatternResult, PatternSizeRecommendation, Rgb } from "../../utils/types";
+import type { AccessKeySummary, BeadUsage, PaletteColor, PatternCell, PatternResult, PatternSizeRecommendation, Rgb } from "../../utils/types";
 import { isBeadCell, isEmptyCell } from "../../utils/types";
 
 type PatternSource = "original" | "ai";
@@ -49,14 +53,18 @@ type EditorTool = "pan" | "point" | "paint" | "picker" | "fill";
 type EditorTouchMode = "idle" | "pan" | "paint" | "pinch";
 type EditorTouchPoint = { pageX?: number; pageY?: number; clientX?: number; clientY?: number; x?: number; y?: number };
 type EditorTouchSnapshot = { touches: EditorTouchPoint[]; changedTouches: EditorTouchPoint[] };
-let editorHistoryCache: EditorHistory<PatternResult> | null = null;
+let editorHistoryCache: EditorPatchHistory | null = null;
 let editorStrokeKeysCache: MarkedCells = {};
 let editorDrawPending = false;
+let editorStrokeDirty = false;
+let editorCanvasCache: { canvas: WechatMiniprogram.Canvas; context: CanvasContextLike; width: number; height: number; pixelRatio: number } | null = null;
+let editorStrokePatchCache: EditorPatch | null = null;
 
 type CanvasContextLike = {
   save(): void;
   restore(): void;
   scale(x: number, y: number): void;
+  setTransform(a: number, b: number, c: number, d: number, e: number, f: number): void;
   clearRect(x: number, y: number, width: number, height: number): void;
   fillRect(x: number, y: number, width: number, height: number): void;
   strokeRect(x: number, y: number, width: number, height: number): void;
@@ -78,29 +86,11 @@ type CanvasContextLike = {
   lineJoin: string;
 };
 
-function formatAiAccessDateTime(value: string): string {
-  if (!value) {
-    return "-";
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  const month = `${date.getMonth() + 1}`.padStart(2, "0");
-  const day = `${date.getDate()}`.padStart(2, "0");
-  const hours = `${date.getHours()}`.padStart(2, "0");
-  const minutes = `${date.getMinutes()}`.padStart(2, "0");
-  return `${month}-${day} ${hours}:${minutes}`;
-}
-
-function formatAiAccessSummary(summary: AiAccessSummary | null): string {
+function formatAiAccessSummary(summary: AccessKeySummary | null): string {
   if (!summary) {
-    return "进入 AI 生图后读取权益";
+    return "请先添加 AI 权限码";
   }
-  if (summary.hasFreeAccess) {
-    return `管理员免费中，至 ${formatAiAccessDateTime(summary.freeAccessExpiresAt || "")}`;
-  }
-  return `剩余 ${summary.remainingQuota} 次`;
+  return summary.canGenerateAi ? `权限码剩余 ${summary.remainingUses} 次` : `权限码${summary.status}`;
 }
 Page({
   data: {
@@ -118,10 +108,8 @@ Page({
     aiImageProgressText: "",
     aiImageId: "",
     aiImagePath: "",
-    aiAccessText: "进入 AI 生图后读取权益",
+    aiAccessText: "请先添加 AI 权限码",
     aiRemainingQuota: 0,
-    aiHasFreeAccess: false,
-    aiFreeAccessExpiresAt: "",
     isLoadingAiAccess: false,
     patternSource: "original" as PatternSource,
     isRecommendingSize: false,
@@ -476,26 +464,28 @@ Page({
   },
 
 
-  async refreshAiAccessSummary(silent = false): Promise<AiAccessSummary | null> {
+  async refreshAiAccessSummary(silent = false): Promise<AccessKeySummary | null> {
     if (!silent) {
-      this.setData({ isLoadingAiAccess: true, aiAccessText: "正在读取权益" });
+      this.setData({ isLoadingAiAccess: true, aiAccessText: "正在校验权限码" });
     }
     try {
-      await ensureWechatSession();
-      const summary = await getMyAiAccess();
+      const accessCode = getStoredAccessCode();
+      if (!accessCode) {
+        this.setData({ aiAccessText: "请先添加 AI 权限码", aiRemainingQuota: 0 });
+        return null;
+      }
+      const summary = await getAccessKeySummary(accessCode);
       this.setData({
         aiAccessText: formatAiAccessSummary(summary),
-        aiRemainingQuota: summary.remainingQuota,
-        aiHasFreeAccess: summary.hasFreeAccess,
-        aiFreeAccessExpiresAt: summary.freeAccessExpiresAt || ""
+        aiRemainingQuota: summary.remainingUses
       });
       return summary;
     } catch (error) {
-      const message = error instanceof Error ? error.message : "权益读取失败";
+      const message = error instanceof Error ? error.message : "权限码校验失败";
       if (!silent) {
         wx.showToast({ title: message, icon: "none" });
       }
-      this.setData({ aiAccessText: "权益读取失败，请检查登录或后端配置" });
+      this.setData({ aiAccessText: "权限码不可用", aiRemainingQuota: 0 });
       return null;
     } finally {
       if (!silent) {
@@ -510,9 +500,7 @@ Page({
       wx.navigateTo({ url: AI_ACCESS_ROUTE });
       return false;
     }
-    const content = summary.hasFreeAccess
-      ? `当前管理员免费期内，本次成功后不扣次数。免费至 ${formatAiAccessDateTime(summary.freeAccessExpiresAt || "")}`
-      : `当前剩余 ${summary.remainingQuota} 次，本次成功后将扣 1 次。`;
+    const content = `当前权限码剩余 ${summary.remainingUses} 次，本次成功生成后将扣除 1 次。`;
     return new Promise((resolve) => {
       wx.showModal({
         title: "确认生成 AI 图",
@@ -553,6 +541,7 @@ Page({
       aiImageProgressText: aiImageProgressText("pending", 12)
     });
     try {
+      const accessCode = getStoredAccessCode();
       const created = await createAiImage({
         imagePath,
         widthCells,
@@ -560,7 +549,8 @@ Page({
         aiDetail,
         aiStyle,
         aiEffect3d,
-        aiShading
+        aiShading,
+        accessCode
       });
       const submittedProgress = nextAiImageProgress(20, created.status);
       this.setData({
@@ -958,7 +948,7 @@ Page({
     const selection = this.data.selectedEditCell;
     this.setActiveEditColor(paletteColor);
     if (selection && this.data.editorTool === "point") {
-      this.applyEditorColor(selection.row, selection.col, paletteColor, true);
+      this.applyEditorColor(selection.row, selection.col, paletteColor, "paint");
     }
   },
 
@@ -1096,11 +1086,12 @@ Page({
     this.setEditorGuideCell(cell, this.data.editorTool !== "paint");
     if (this.data.editorTool === "paint") {
       editorStrokeKeysCache = {};
+      editorStrokePatchCache = null;
       this.setData({ editorTouchMode: "paint" });
-      this.paintEditorCell(cell.row, cell.col, true, true);
+      this.paintEditorCell(cell.row, cell.col, "stroke", true);
       return;
     }
-    this.handleEditorCellAction(cell.row, cell.col, true);
+    this.handleEditorCellAction(cell.row, cell.col);
   },
   onEditorCanvasTouchMove(event: WechatMiniprogram.TouchEvent) {
     const snapshot = this.snapshotEditorTouchEvent(event);
@@ -1134,7 +1125,7 @@ Page({
       const cell = this.getEditorCellFromTouch(touch);
       if (cell) {
         this.setEditorGuideCell(cell, false);
-        this.paintEditorCell(cell.row, cell.col, false, true);
+        this.paintEditorCell(cell.row, cell.col, "stroke", true);
       } else {
         this.clearEditorGuideCell();
       }
@@ -1142,11 +1133,21 @@ Page({
   },
 
   onEditorCanvasTouchEnd() {
+    const shouldFlushStroke = editorStrokeDirty;
+    const strokePatch = editorStrokePatchCache;
     editorStrokeKeysCache = {};
+    editorStrokePatchCache = null;
+    editorStrokeDirty = false;
+    if (strokePatch?.changes.length) {
+      this.pushEditorPatch(strokePatch);
+    }
     this.setData({
       editorTouchMode: "idle",
       editorPinchStartDistance: 0
     });
+    if (shouldFlushStroke && this.data.result) {
+      this.flushEditorStrokeState(this.data.result);
+    }
     this.clearEditorGuideCell();
   },
 
@@ -1170,7 +1171,7 @@ Page({
     return cell;
   },
 
-  handleEditorCellAction(row: number, col: number, saveHistory: boolean) {
+  handleEditorCellAction(row: number, col: number) {
     const result = this.data.result;
     if (!result) {
       return;
@@ -1201,10 +1202,10 @@ Page({
       return;
     }
 
-    this.paintEditorCell(row, col, saveHistory, false);
+    this.paintEditorCell(row, col, "paint", false);
   },
 
-  paintEditorCell(row: number, col: number, saveHistory: boolean, isStroke: boolean) {
+  paintEditorCell(row: number, col: number, patchType: EditorPatchType, isStroke: boolean) {
     const color = this.data.activeEditColor;
     if (!color) {
       wx.showToast({ title: "请先选择颜色", icon: "none" });
@@ -1214,9 +1215,9 @@ Page({
     if (isStroke && editorStrokeKeysCache[key]) {
       return;
     }
-    this.applyEditorColor(row, col, color, saveHistory);
+    this.applyEditorColor(row, col, color, patchType);
     if (isStroke) {
-      editorStrokeKeysCache = { ...editorStrokeKeysCache, [key]: true };
+      editorStrokeKeysCache[key] = true;
     }
   },
 
@@ -1230,11 +1231,12 @@ Page({
     if (!positions.length) {
       return;
     }
-    const nextResult = replacePatternCellsColor(result, positions, paletteColor);
-    if (nextResult === result) {
+    const patch = this.buildEditorPatch(result, positions, paletteColor, "fill", `${paletteColor.code} filled ${positions.length} cells`, `${row}-${col}`);
+    if (!patch.changes.length) {
       return;
     }
-    this.commitEditorResult(nextResult, `${paletteColor.code} filled ${positions.length} cells`, true, `${row}-${col}`);
+    const nextResult = applyEditorPatch(result, patch, "redo");
+    this.commitEditorResult(nextResult, patch, false);
   },
 
 
@@ -1248,42 +1250,45 @@ Page({
     return `raw:${cell.sourceRgb.join(",")}`;
   },
 
-  applyEditorColor(row: number, col: number, paletteColor: PaletteColor, saveHistory: boolean) {
+  applyEditorColor(row: number, col: number, paletteColor: PaletteColor, patchType: EditorPatchType) {
     const result = this.data.result;
     if (!result) {
       return;
     }
-    const nextResult = this.replaceCellInResult(result, row, col, paletteColor);
-    if (nextResult === result) {
+    const patch = this.buildEditorPatch(result, [{ row, col }], paletteColor, patchType, `${paletteColor.code} applied at row ${row + 1}, col ${col + 1}`, `${row}-${col}`);
+    if (!patch.changes.length) {
       return;
     }
-    this.commitEditorResult(nextResult, `${paletteColor.code} applied at row ${row + 1}, col ${col + 1}`, saveHistory, `${row}-${col}`);
+    const nextResult = applyEditorPatch(result, patch, "redo");
+    this.commitEditorResult(nextResult, patch, patchType === "stroke");
   },
 
-  replaceCellInResult(result: PatternResult, row: number, col: number, paletteColor: PaletteColor): PatternResult {
-    const nextResult = replacePatternCellColor(result, row, col, paletteColor);
-    return nextResult;
-  },
-
-  commitEditorResult(nextResult: PatternResult, statusText: string, saveHistory: boolean, selectedKey: string) {
-    const result = this.data.result;
+  commitEditorResult(nextResult: PatternResult, patch: EditorPatch, deferUi = false) {
     if (!editorHistoryCache) {
-      editorHistoryCache = createEditorHistory(result ?? nextResult);
+      editorHistoryCache = createEditorPatchHistory();
     }
-    editorHistoryCache = saveHistory
-      ? pushEditorHistory(editorHistoryCache, nextResult)
-      : { ...editorHistoryCache, current: nextResult };
+    if (patch.type === "stroke") {
+      this.mergeStrokePatch(patch);
+    } else {
+      this.pushEditorPatch(patch);
+    }
     this.data.result = nextResult;
     this.data.usage = nextResult.usage;
+    if (deferUi) {
+      editorStrokeDirty = true;
+      this.data.hoveredTraceCellKey = patch.selectedKey;
+      this.requestEditorCanvasDraw();
+      return;
+    }
     this.setData({
       usage: nextResult.usage,
       resultBeadCount: this.calculateUsageTotal(nextResult.usage),
       editorUndoCount: editorHistoryCache.past.length,
       editorRedoCount: editorHistoryCache.future.length,
-      editorStatusText: statusText,
-      hoveredTraceCellKey: selectedKey,
-      selectedEditCell: this.selectionFromKey(selectedKey),
-      selectedEditCellText: this.formatSelectedEditCellText(nextResult, selectedKey),
+      editorStatusText: patch.label,
+      hoveredTraceCellKey: patch.selectedKey,
+      selectedEditCell: this.selectionFromKey(patch.selectedKey),
+      selectedEditCellText: this.formatSelectedEditCellText(nextResult, patch.selectedKey),
       editCandidateColors: this.buildEditCandidateColors(this.data.activeEditColor?.code, nextResult.usage),
       editPaletteDropdownOpen: false
     });
@@ -1292,17 +1297,98 @@ Page({
     });
   },
 
+  buildEditorPatch(
+    result: PatternResult,
+    positions: Array<{ row: number; col: number }>,
+    paletteColor: PaletteColor,
+    type: EditorPatchType,
+    label: string,
+    selectedKey: string
+  ): EditorPatch {
+    const changes: EditorCellPatch[] = [];
+    const seen: MarkedCells = {};
+    for (const position of positions) {
+      const key = `${position.row}-${position.col}`;
+      if (seen[key]) {
+        continue;
+      }
+      seen[key] = true;
+      const beforeCell = result.cells[position.row]?.[position.col];
+      if (!beforeCell || isEmptyCell(beforeCell)) {
+        continue;
+      }
+      if (isBeadCell(beforeCell) && beforeCell.beadCode === paletteColor.code) {
+        continue;
+      }
+      const afterResult = replacePatternCellColor(result, position.row, position.col, paletteColor);
+      const afterCell = afterResult.cells[position.row]?.[position.col];
+      if (!afterCell || afterCell === beforeCell) {
+        continue;
+      }
+      changes.push({ row: position.row, col: position.col, beforeCell, afterCell });
+    }
+    return { type, label, selectedKey, changes };
+  },
+
+  pushEditorPatch(patch: EditorPatch) {
+    if (!patch.changes.length) {
+      return;
+    }
+    if (!editorHistoryCache) {
+      editorHistoryCache = createEditorPatchHistory();
+    }
+    editorHistoryCache = pushEditorPatchHistory(editorHistoryCache, patch);
+  },
+
+  mergeStrokePatch(patch: EditorPatch) {
+    if (!patch.changes.length) {
+      return;
+    }
+    if (!editorStrokePatchCache) {
+      editorStrokePatchCache = { ...patch, changes: [...patch.changes] };
+      return;
+    }
+    const changesByKey: Record<string, EditorCellPatch> = {};
+    for (const change of editorStrokePatchCache.changes) {
+      changesByKey[`${change.row}-${change.col}`] = change;
+    }
+    for (const change of patch.changes) {
+      const key = `${change.row}-${change.col}`;
+      const existing = changesByKey[key];
+      changesByKey[key] = existing ? { ...change, beforeCell: existing.beforeCell } : change;
+    }
+    editorStrokePatchCache = {
+      ...editorStrokePatchCache,
+      label: patch.label,
+      selectedKey: patch.selectedKey,
+      changes: Object.values(changesByKey)
+    };
+  },
+
+  flushEditorStrokeState(result: PatternResult) {
+    const selectedKey = this.data.hoveredTraceCellKey;
+    this.setData({
+      usage: result.usage,
+      resultBeadCount: this.calculateUsageTotal(result.usage),
+      editorUndoCount: editorHistoryCache?.past.length || 0,
+      editorRedoCount: editorHistoryCache?.future.length || 0,
+      selectedEditCell: this.selectionFromKey(selectedKey),
+      selectedEditCellText: this.formatSelectedEditCellText(result, selectedKey),
+      editCandidateColors: this.buildEditCandidateColors(this.data.activeEditColor?.code, result.usage),
+      editPaletteDropdownOpen: false
+    });
+  },
+
   undoEditorChange() {
     if (!editorHistoryCache) {
       return;
     }
-    const previousHistory = editorHistoryCache;
-    const nextHistory = undoEditorHistory(previousHistory);
-    if (nextHistory === previousHistory) {
+    const { history: nextHistory, patch } = undoEditorPatchHistory(editorHistoryCache);
+    if (!patch || !this.data.result) {
       return;
     }
     editorHistoryCache = nextHistory;
-    const previous = nextHistory.current;
+    const previous = applyEditorPatch(this.data.result, patch, "undo");
     this.data.result = previous;
     this.data.usage = previous.usage;
     this.setData({
@@ -1310,8 +1396,10 @@ Page({
       resultBeadCount: this.calculateUsageTotal(previous.usage),
       editorUndoCount: nextHistory.past.length,
       editorRedoCount: nextHistory.future.length,
-      editorStatusText: "???",
-      selectedEditCellText: this.formatSelectedEditCellText(previous, this.data.hoveredTraceCellKey),
+      editorStatusText: `已撤销 ${patch.label}`,
+      hoveredTraceCellKey: patch.selectedKey,
+      selectedEditCell: this.selectionFromKey(patch.selectedKey),
+      selectedEditCellText: this.formatSelectedEditCellText(previous, patch.selectedKey),
       editCandidateColors: this.buildEditCandidateColors(this.data.activeEditColor?.code, previous.usage)
     });
     wx.nextTick(() => {
@@ -1324,13 +1412,12 @@ Page({
     if (!editorHistoryCache) {
       return;
     }
-    const previousHistory = editorHistoryCache;
-    const nextHistory = redoEditorHistory(previousHistory);
-    if (nextHistory === previousHistory) {
+    const { history: nextHistory, patch } = redoEditorPatchHistory(editorHistoryCache);
+    if (!patch || !this.data.result) {
       return;
     }
     editorHistoryCache = nextHistory;
-    const next = nextHistory.current;
+    const next = applyEditorPatch(this.data.result, patch, "redo");
     this.data.result = next;
     this.data.usage = next.usage;
     this.setData({
@@ -1338,8 +1425,10 @@ Page({
       resultBeadCount: this.calculateUsageTotal(next.usage),
       editorUndoCount: nextHistory.past.length,
       editorRedoCount: nextHistory.future.length,
-      editorStatusText: "???",
-      selectedEditCellText: this.formatSelectedEditCellText(next, this.data.hoveredTraceCellKey),
+      editorStatusText: `已重做 ${patch.label}`,
+      hoveredTraceCellKey: patch.selectedKey,
+      selectedEditCell: this.selectionFromKey(patch.selectedKey),
+      selectedEditCellText: this.formatSelectedEditCellText(next, patch.selectedKey),
       editCandidateColors: this.buildEditCandidateColors(this.data.activeEditColor?.code, next.usage)
     });
     wx.nextTick(() => {
@@ -1456,8 +1545,11 @@ Page({
       ? ({ code: firstUsage.beadCode, name: firstUsage.beadName, rgb: firstUsage.beadRgb, enabled: true } as PaletteColor)
       : this.data.activeEditColor;
 
-    editorHistoryCache = createEditorHistory(pattern);
+    editorHistoryCache = createEditorPatchHistory();
     editorStrokeKeysCache = {};
+    editorStrokeDirty = false;
+    editorCanvasCache = null;
+    editorStrokePatchCache = null;
 
     this.setData({
       editorCanvasCssWidth: cssWidth,
@@ -1565,6 +1657,28 @@ Page({
       return;
     }
 
+    const drawWithCanvas = (canvas: WechatMiniprogram.Canvas, context: CanvasContextLike) => {
+      const width = this.data.editorCanvasCssWidth;
+      const height = this.data.editorCanvasCssHeight;
+      const pixelRatio = wx.getSystemInfoSync().pixelRatio;
+      if (!editorCanvasCache || editorCanvasCache.width !== width || editorCanvasCache.height !== height || editorCanvasCache.pixelRatio !== pixelRatio) {
+        canvas.width = width * pixelRatio;
+        canvas.height = height * pixelRatio;
+        editorCanvasCache = { canvas, context, width, height, pixelRatio };
+      }
+      context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+      context.clearRect(0, 0, width, height);
+      context.fillStyle = "#f8fafc";
+      context.fillRect(0, 0, width, height);
+      this.drawEditorRulers(context, result);
+      this.drawEditorCells(context, result);
+    };
+
+    if (editorCanvasCache) {
+      drawWithCanvas(editorCanvasCache.canvas, editorCanvasCache.context);
+      return;
+    }
+
     const query = wx.createSelectorQuery();
     query
       .select("#editorPatternCanvas")
@@ -1574,18 +1688,8 @@ Page({
         if (!canvas) {
           return;
         }
-        const width = this.data.editorCanvasCssWidth;
-        const height = this.data.editorCanvasCssHeight;
-        const pixelRatio = wx.getSystemInfoSync().pixelRatio;
-        canvas.width = width * pixelRatio;
-        canvas.height = height * pixelRatio;
         const context = canvas.getContext("2d") as unknown as CanvasContextLike;
-        context.scale(pixelRatio, pixelRatio);
-        context.clearRect(0, 0, width, height);
-        context.fillStyle = "#f8fafc";
-        context.fillRect(0, 0, width, height);
-        this.drawEditorRulers(context, result);
-        this.drawEditorCells(context, result);
+        drawWithCanvas(canvas, context);
       });
   },
 
@@ -1652,8 +1756,17 @@ Page({
       context.font = `${Math.max(8, Math.floor(cellSize * 0.32))}px sans-serif`;
     }
 
-    for (const row of result.cells) {
-      for (const cell of row) {
+    const visible = this.visibleEditorCellRange(result, originX, originY, cellSize);
+    for (let rowIndex = visible.startRow; rowIndex <= visible.endRow; rowIndex += 1) {
+      const row = result.cells[rowIndex];
+      if (!row) {
+        continue;
+      }
+      for (let colIndex = visible.startCol; colIndex <= visible.endCol; colIndex += 1) {
+        const cell = row[colIndex];
+        if (!cell) {
+          continue;
+        }
         const x = originX + cell.x * cellSize;
         const y = originY + cell.y * cellSize;
         const displayRgb = isBeadCell(cell) ? cell.beadRgb : isEmptyCell(cell) ? [248, 250, 252] : cell.sourceRgb;
@@ -1668,7 +1781,7 @@ Page({
       }
     }
     context.globalAlpha = 1;
-    this.drawEditorGrid(context, result, originX, originY, cellSize);
+    this.drawEditorGrid(context, result, originX, originY, cellSize, visible);
     this.drawEditorGuides(context, result, originX, originY, cellSize, patternWidth, patternHeight);
     if (this.data.hoveredTraceCellKey) {
       const selected = this.selectionFromKey(this.data.hoveredTraceCellKey);
@@ -1679,6 +1792,17 @@ Page({
       }
     }
     context.restore();
+  },
+
+  visibleEditorCellRange(result: PatternResult, originX: number, originY: number, cellSize: number) {
+    const ruler = this.data.editorRulerSize;
+    const viewportWidth = this.data.editorCanvasCssWidth;
+    const viewportHeight = this.data.editorCanvasCssHeight;
+    const startCol = Math.max(0, Math.floor((ruler - originX) / cellSize) - 1);
+    const endCol = Math.min(result.widthCells - 1, Math.ceil((viewportWidth - originX) / cellSize) + 1);
+    const startRow = Math.max(0, Math.floor((ruler - originY) / cellSize) - 1);
+    const endRow = Math.min(result.heightCells - 1, Math.ceil((viewportHeight - originY) / cellSize) + 1);
+    return { startCol, endCol, startRow, endRow };
   },
 
   drawEditorGuides(
@@ -1714,11 +1838,22 @@ Page({
     context.strokeRect(x + 1, y + 1, Math.max(1, cellSize - 2), Math.max(1, cellSize - 2));
     context.restore();
   },
-  drawEditorGrid(context: CanvasContextLike, result: PatternResult, originX: number, originY: number, cellSize: number) {
+  drawEditorGrid(
+    context: CanvasContextLike,
+    result: PatternResult,
+    originX: number,
+    originY: number,
+    cellSize: number,
+    visible?: { startCol: number; endCol: number; startRow: number; endRow: number }
+  ) {
     const width = result.widthCells * cellSize;
     const height = result.heightCells * cellSize;
+    const startCol = visible ? Math.max(0, visible.startCol) : 0;
+    const endCol = visible ? Math.min(result.widthCells, visible.endCol + 1) : result.widthCells;
+    const startRow = visible ? Math.max(0, visible.startRow) : 0;
+    const endRow = visible ? Math.min(result.heightCells, visible.endRow + 1) : result.heightCells;
     context.save();
-    for (let col = 0; col <= result.widthCells; col += 1) {
+    for (let col = startCol; col <= endCol; col += 1) {
       const x = originX + col * cellSize;
       const isMajor = col % 10 === 0;
       const isGroup = col % 5 === 0;
@@ -1729,7 +1864,7 @@ Page({
       context.lineTo(x, originY + height);
       context.stroke();
     }
-    for (let row = 0; row <= result.heightCells; row += 1) {
+    for (let row = startRow; row <= endRow; row += 1) {
       const y = originY + row * cellSize;
       const isMajor = row % 10 === 0;
       const isGroup = row % 5 === 0;
