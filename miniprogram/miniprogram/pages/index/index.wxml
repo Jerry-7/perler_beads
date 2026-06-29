@@ -1,4 +1,26 @@
 <view class="maker-page">
+  <!-- <view class="container">
+    <view class="card">
+      <text class="title">完善个人资料</text>
+      
+      <button class="avatar-wrapper" open-type="chooseAvatar" bindchooseavatar="onChooseAvatar">
+        <image class="avatar" src="{{avatarUrl}}"></image>
+      </button>
+      
+      <input type="nickname" class="nickname-input" placeholder="请输入或选择昵称" bindblur="onBlurNickname"/>
+      
+      <button type="primary" bindtap="submitProfile" style="margin-top: 20rpx;">保存头像昵称</button>
+    </view>
+
+    <view class="card" style="margin-top: 40rpx;">
+      <text class="title">手机号绑定</text>
+      <p class="desc">部分功能需要绑定手机号后方可使用</p>
+      <button type="warn" open-type="getPhoneNumber" bindgetphonenumber="onGetPhoneNumber">
+        一键绑定微信手机号
+      </button>
+    </view>
+</view> -->
+
   <view class="maker-hero">
     <view class="hero-copy">
       <text class="hero-kicker">制作</text>
@@ -28,7 +50,7 @@
     <view class="panel-heading">
       <text class="panel-title">AI 生图设置</text>
       <view class="heading-actions">
-        <button class="link-button" size="mini" bindtap="openAiAccessPage">权益</button>
+        <button class="link-button" size="mini" bindtap="openAiAccessPage">权限码</button>
         <button class="link-button" size="mini" bindtap="backToToolHome">返回</button>
       </view>
     </view>
@@ -105,7 +127,7 @@
 
     <view class="ai-access-strip">
       <text>{{aiAccessText}}</text>
-      <button size="mini" class="ai-access-link" bindtap="openAiAccessPage">购买/兑换</button>
+      <button size="mini" class="ai-access-link" bindtap="openAiAccessPage">权限码</button>
     </view>
 
     <button class="generate-button" loading="{{isGeneratingAiImage}}" disabled="{{!imagePath || isGeneratingAiImage}}" bindtap="generateAiImage">
