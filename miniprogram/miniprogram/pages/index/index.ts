@@ -189,6 +189,8 @@ Page({
     activeEditColorText: "选择颜色",
     
     highlightedBeadCode: "",
+    replaceTargetCode: "",
+    candidateScrollInto: "",
     editorCanvasCssWidth: 320,
     editorCanvasCssHeight: 420,
     editorCanvasRectLeft: 0,
@@ -889,9 +891,11 @@ Page({
 
   onEditSearchInput(event: WechatMiniprogram.Input) {
     const query = event.detail.value;
+    // 空搜索时展示全部颜色，有搜索词时过滤
+    const trimmedQuery = query.trim();
     this.setData({
       editSearchQuery: query,
-      editSearchResults: filterPaletteColors(this.data.paletteColors, query, this.data.editPaletteDropdownOpen ? 80 : 12)
+      editSearchResults: filterPaletteColors(this.data.paletteColors, trimmedQuery, trimmedQuery ? 80 : 200)
     });
   },
 
@@ -899,7 +903,8 @@ Page({
     const nextOpen = !this.data.editPaletteDropdownOpen;
     this.setData({
       editPaletteDropdownOpen: nextOpen,
-      editSearchResults: nextOpen ? filterPaletteColors(this.data.paletteColors, this.data.editSearchQuery, 80) : this.data.editSearchResults
+      editSearchQuery: "",
+      editSearchResults: nextOpen ? filterPaletteColors(this.data.paletteColors, "", 200) : []
     });
   },
 
@@ -993,6 +998,72 @@ Page({
     this.setData({ highlightedBeadCode: this.data.highlightedBeadCode === code ? "" : code || "" });
     wx.nextTick(() => {
       this.drawEditorCanvas();
+    });
+  },
+
+  /** 开始颜色替换：长按已用色号进入替换模式 */
+  startReplaceColor(event: WechatMiniprogram.TouchEvent) {
+    const code = event.currentTarget.dataset.code as string | undefined;
+    if (!code) return;
+    // 打开全色盘供用户选择替换颜色
+    this.setData({
+      replaceTargetCode: code,
+      editPaletteDropdownOpen: true,
+      editSearchQuery: "",
+      editSearchResults: filterPaletteColors(this.data.paletteColors, "", 200),
+      editorStatusText: `选择替换色号（当前 ${code}）`
+    });
+  },
+
+  /** 确认替换：在全色盘中点击目标颜色，将所有 replaceTargetCode 色号替换为该颜色 */
+  confirmReplaceColor(event: WechatMiniprogram.TouchEvent) {
+    const newColor = this.resolvePaletteColorFromEvent(event);
+    const targetCode = this.data.replaceTargetCode;
+    if (!newColor || !targetCode || newColor.code === targetCode) {
+      this.cancelReplaceColor();
+      return;
+    }
+    const result = this.data.result;
+    if (!result) return;
+
+    // 收集所有需要替换的 cell 位置
+    const positions: Array<{ row: number; col: number }> = [];
+    for (let row = 0; row < result.cells.length; row += 1) {
+      for (let col = 0; col < result.cells[row].length; col += 1) {
+        const cell = result.cells[row][col];
+        if (isBeadCell(cell) && cell.beadCode === targetCode) {
+          positions.push({ row, col });
+        }
+      }
+    }
+
+    if (!positions.length) {
+      this.cancelReplaceColor();
+      return;
+    }
+
+    const patch = this.buildEditorPatch(
+      result,
+      positions,
+      newColor,
+      "fill",
+      `${targetCode} → ${newColor.code}（${positions.length} 格）`,
+      `${positions[0].row}-${positions[0].col}`
+    );
+    if (!patch.changes.length) {
+      this.cancelReplaceColor();
+      return;
+    }
+    const nextResult = applyEditorPatch(result, patch, "redo");
+    this.setData({ replaceTargetCode: "" });
+    this.commitEditorResult(nextResult, patch, false);
+  },
+
+  /** 取消替换模式 */
+  cancelReplaceColor() {
+    this.setData({
+      replaceTargetCode: "",
+      editorStatusText: this.data.editorTool === "pan" ? "浏览图纸" : ""
     });
   },
 
@@ -1196,6 +1267,14 @@ Page({
       return;
     }
 
+    // 点击格子时将已用色号列表滚动到对应颜色
+    if (isBeadCell(cell)) {
+      const scrollTarget = `cand-${cell.beadCode}`;
+      if (this.data.candidateScrollInto !== scrollTarget) {
+        this.setData({ candidateScrollInto: scrollTarget });
+      }
+    }
+
     if (this.data.editorTool === "picker") {
       if (isEmptyCell(cell)) {
         wx.showToast({ title: "空格子无法取色", icon: "none" });
@@ -1206,7 +1285,7 @@ Page({
         return;
       }
       this.setActiveEditColor({ code: cell.beadCode, name: cell.beadName, rgb: cell.beadRgb, enabled: true });
-      this.setData({ editorTool: "point", editorStatusText: "已吸取颜色，点击格子即可上色。" });
+      this.setData({ editorStatusText: `已吸取 ${cell.beadCode} ${cell.beadName}` });
       return;
     }
 
@@ -2304,19 +2383,56 @@ Page({
   },
 
   exportPng() {
+    const isDevtools = wx.getSystemInfoSync().platform === "devtools";
     this.drawPattern(true, async (tempFilePath) => {
       if (!tempFilePath) {
         wx.showToast({ title: "导出失败", icon: "none" });
+        return;
+      }
+      if (isDevtools) {
+        // PC 开发者工具没有真实相册，弹出分享菜单可保存到本地
+        wx.showShareImageMenu({ path: tempFilePath });
         return;
       }
       await this.saveTempImageToAlbum(tempFilePath);
     });
   },
 
+  /**
+   * 保存临时图片到相册。
+   * 微信开发者工具中 canvasToTempFilePath 返回 http://tmp/... 格式的路径，
+   * saveImageToPhotosAlbum 无法直接处理，需要先 downloadFile 转为本地路径。
+   */
   async saveTempImageToAlbum(tempFilePath: string) {
-    console.log("[pattern-export] save temp image to album", { tempFilePath });
-    const result = await saveImageWithAlbumPermission(wx, tempFilePath);
-    console.log("[pattern-export] album save result", { result, tempFilePath });
+    let localPath = tempFilePath;
+
+    // 开发者工具中 temp 文件是 HTTP URL，需先下载到本地
+    if (tempFilePath.startsWith("http://tmp/") || tempFilePath.startsWith("http://127.0.0.1")) {
+      console.log("[pattern-export] downloading http temp file for album save", { tempFilePath });
+      try {
+        localPath = await new Promise<string>((resolve, reject) => {
+          wx.downloadFile({
+            url: tempFilePath,
+            success: (res) => {
+              if (res.statusCode >= 200 && res.statusCode < 300 && res.tempFilePath) {
+                console.log("[pattern-export] downloadFile success", { localPath: res.tempFilePath });
+                resolve(res.tempFilePath);
+              } else {
+                reject(new Error(`downloadFile status ${res.statusCode}`));
+              }
+            },
+            fail: (err) => reject(new Error(err.errMsg || "downloadFile failed"))
+          });
+        });
+      } catch (error) {
+        console.error("[pattern-export] downloadFile failed, falling back to original path", error);
+        // 回退到原始路径尝试
+      }
+    }
+
+    console.log("[pattern-export] save temp image to album", { tempFilePath, localPath });
+    const result = await saveImageWithAlbumPermission(wx, localPath);
+    console.log("[pattern-export] album save result", { result, localPath });
     if (result === "saved") {
       wx.showToast({ title: "已保存", icon: "success" });
       return;
