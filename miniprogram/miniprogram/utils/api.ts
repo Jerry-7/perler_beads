@@ -112,6 +112,8 @@ export interface UploadGenerationInput {
   colorComplexity?: ColorComplexity;
   samplingMode?: SamplingMode;
   aiMaxColors?: number;
+  clusterQuantile?: number;
+  clusterEps?: number;
 }
 
 export interface CreateAiImageInput {

@@ -45,7 +45,7 @@ from app.settings import load_settings
 AI_STYLE_OPTIONS = {"faithful", "iconic", "crafted", "dramatic"}
 AI_EFFECT_3D_OPTIONS = {"none", "subtle", "balanced", "strong"}
 AI_SHADING_OPTIONS = {"flat", "step", "dithered"}
-SAMPLING_MODE_OPTIONS = {"raw", "edge", "dominant", "detail", "smooth", "nearest", "coverage", "center-shrink", "grid-scan", "ultra-small", "line-art"}
+SAMPLING_MODE_OPTIONS = {"raw", "edge", "dominant", "detail", "smooth", "nearest", "coverage", "center-shrink", "grid-scan", "ultra-small", "line-art", "cluster-ms", "cluster-dbscan"}
 LOGGER = logging.getLogger(__name__)
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
@@ -277,6 +277,8 @@ async def create_generation(
     colorComplexity: str = Form("balanced"),
     samplingMode: str = Form("dominant"),
     aiMaxColors: int = Form(16),
+    clusterQuantile: float = Form(0.2),
+    clusterEps: float = Form(30.0),
 ) -> GenerationResponse:
     validate_generation_controls(widthCells, heightCells, sourceMode, samplingMode)
     validate_max_colors(aiMaxColors)
@@ -295,6 +297,8 @@ async def create_generation(
             color_complexity=color_complexity,
             sampling_mode=samplingMode,
             max_colors=aiMaxColors,
+            cluster_quantile=clusterQuantile,
+            cluster_eps=clusterEps,
         )
     except GenerationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

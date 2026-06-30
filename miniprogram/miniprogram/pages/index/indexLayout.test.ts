@@ -83,7 +83,7 @@ test("pattern panel owns upload recommendation and pattern controls", () => {
   const recommendedColors = wxml.indexOf("recommendedColors", panelStart);
   const applyRecommended = wxml.indexOf("applyRecommendedPatternSize", panelStart);
   const sizeWarning = wxml.indexOf("patternSizeWarning", panelStart);
-  const maxColors = wxml.indexOf("onPatternMaxColorsInput", panelStart);
+  const maxColors = wxml.indexOf("onPatternMaxColorsChange", panelStart);
   const sampling = wxml.indexOf("onSamplingModeChange", panelStart);
 
   assert(panelStart >= 0, "missing pattern generation panel");
@@ -213,13 +213,13 @@ test("selecting an edit color does not automatically dim the pattern", () => {
 });
 
 
-test("editor cell actions allow raw color cells to be repainted", () => {
+test("editor cell actions allow raw color cells and empty cells to be repainted", () => {
   const methodStart = pageTs.indexOf("handleEditorCellAction(row");
   const methodEnd = pageTs.indexOf("paintEditorCell(row", methodStart);
   const methodBody = pageTs.slice(methodStart, methodEnd);
 
   assert(methodStart >= 0, "missing handleEditorCellAction method");
-  assert(methodBody.includes("if (!cell || isEmptyCell(cell))"), "editor should reject only empty cells before repainting");
+  assert(!methodBody.includes("if (!cell || isEmptyCell(cell))"), "editor should allow painting empty cells");
   assert(!methodBody.includes("if (!cell || !isBeadCell(cell))"), "editor should not block raw color cells before repainting");
 });
 

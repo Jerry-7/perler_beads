@@ -8,7 +8,6 @@ import {
   DEFAULT_AI_SHADING_INDEX,
   DEFAULT_AI_STYLE_INDEX,
   normalizeAiMaxColors,
-  normalizeAiMaxColorsInput,
   type AiEffect3d,
   type AiShading,
   type AiStyle
@@ -16,7 +15,7 @@ import {
 import { aiImageProgressText, nextAiImageProgress } from "../../utils/aiImageProgress";
 import { getStoredAccessCode } from "../../utils/accessCode";
 import { aiImageUrl, createAiImage, getAccessKeySummary, getAiImage, getGeneration, getPalette, recommendPatternSize, uploadGeneration, type ColorComplexity } from "../../utils/api";
-import { calculatePreviewCanvasSize, calculateZoomedCanvasSize } from "../../utils/canvasSizing";
+import { calculateExportCellSize, calculatePreviewCanvasSize, calculateZoomedCanvasSize } from "../../utils/canvasSizing";
 import {
   applyEditorPatch,
   createEditorPatchHistory,
@@ -134,7 +133,7 @@ Page({
     aiShadingIndex: DEFAULT_AI_SHADING_INDEX,
     aiShadingOptions: AI_SHADING_OPTIONS,
     colorComplexity: "balanced" as ColorComplexity,
-    patternMaxColors: DEFAULT_AI_MAX_COLORS as number | "",
+    patternMaxColors: DEFAULT_AI_MAX_COLORS as number,
     colorComplexityIndex: 2,
     colorComplexityOptions: [
       { label: "极简", value: "minimal" },
@@ -146,6 +145,9 @@ Page({
     samplingMode: SAMPLING_MODE_OPTIONS[DEFAULT_SAMPLING_MODE_INDEX].value as SamplingMode,
     samplingModeIndex: DEFAULT_SAMPLING_MODE_INDEX,
     samplingModeOptions: SAMPLING_MODE_OPTIONS,
+    clusterQuantile: 0.2,
+    clusterQuantileSlider: 20,
+    clusterEps: 30,
     result: null as PatternResult | null,
     usage: [] as BeadUsage[],
     resultBeadCount: 0,
@@ -356,6 +358,18 @@ Page({
     }
   },
 
+  onClusterQuantileChange(event: WechatMiniprogram.SliderChange) {
+    const sliderValue = event.detail.value;
+    this.setData({
+      clusterQuantileSlider: sliderValue,
+      clusterQuantile: Number((sliderValue / 100).toFixed(2))
+    });
+  },
+
+  onClusterEpsChange(event: WechatMiniprogram.SliderChange) {
+    this.setData({ clusterEps: event.detail.value });
+  },
+
   selectOriginalPatternSource() {
     this.setData({ patternSource: "original" });
   },
@@ -400,8 +414,8 @@ Page({
     }
   },
 
-  onPatternMaxColorsInput(event: WechatMiniprogram.Input) {
-    this.setData({ patternMaxColors: normalizeAiMaxColorsInput(event.detail.value) });
+  onPatternMaxColorsChange(event: WechatMiniprogram.SliderChange) {
+    this.setData({ patternMaxColors: event.detail.value });
   },
 
   async applyRecommendedSize(imagePath: string) {
@@ -626,8 +640,8 @@ Page({
   },
 
   async generatePattern() {
-    const { imagePath, aiImageId, patternSource, widthCells, heightCells, colorComplexity, samplingMode, patternMaxColors } = this.data;
-    const normalizedMaxColors = patternMaxColors === "" ? DEFAULT_AI_MAX_COLORS : normalizeAiMaxColors(Number(patternMaxColors));
+    const { imagePath, aiImageId, patternSource, widthCells, heightCells, colorComplexity, samplingMode, patternMaxColors, clusterQuantile, clusterEps } = this.data;
+    const normalizedMaxColors = normalizeAiMaxColors(patternMaxColors);
     if (widthCells < 1 || heightCells < 1) {
       wx.showToast({ title: "请输入有效格数", icon: "none" });
       return;
@@ -651,7 +665,9 @@ Page({
         sourceMode: "resample",
         colorComplexity,
         samplingMode,
-        aiMaxColors: normalizedMaxColors
+        aiMaxColors: normalizedMaxColors,
+        clusterQuantile,
+        clusterEps,
       });
       const completed = await this.waitForGeneration(created.generationId);
       if (completed.status !== "completed" || !completed.result) {
@@ -1176,12 +1192,15 @@ Page({
       return;
     }
     const cell = result.cells[row]?.[col];
-    if (!cell || isEmptyCell(cell)) {
-      wx.showToast({ title: "空格子", icon: "none" });
+    if (!cell) {
       return;
     }
 
     if (this.data.editorTool === "picker") {
+      if (isEmptyCell(cell)) {
+        wx.showToast({ title: "空格子无法取色", icon: "none" });
+        return;
+      }
       if (!isBeadCell(cell)) {
         this.setData({ editorStatusText: "该原色格还没有色号，请选择一个色号进行替换。" });
         return;
@@ -1313,17 +1332,21 @@ Page({
       }
       seen[key] = true;
       const beforeCell = result.cells[position.row]?.[position.col];
-      if (!beforeCell || isEmptyCell(beforeCell)) {
+      if (!beforeCell) {
         continue;
       }
       if (isBeadCell(beforeCell) && beforeCell.beadCode === paletteColor.code) {
         continue;
       }
       // 直接构造 afterCell，避免 replacePatternCellColor 的数组拷贝开销
+      // 空格子也可上色，sourceRgb 使用调色板颜色自身
+      const sourceRgb = isEmptyCell(beforeCell)
+        ? paletteColor.rgb
+        : (beforeCell as BeadCell | RawColorCell).sourceRgb;
       const afterCell: BeadCell = {
         x: beforeCell.x,
         y: beforeCell.y,
-        sourceRgb: (beforeCell as BeadCell | RawColorCell).sourceRgb,
+        sourceRgb,
         beadCode: paletteColor.code,
         beadName: paletteColor.name,
         beadRgb: paletteColor.rgb,
@@ -1677,8 +1700,10 @@ Page({
       const height = this.data.editorCanvasCssHeight;
       const pixelRatio = wx.getSystemInfoSync().pixelRatio;
       if (!editorCanvasCache || editorCanvasCache.width !== width || editorCanvasCache.height !== height || editorCanvasCache.pixelRatio !== pixelRatio) {
-        canvas.width = width * pixelRatio;
-        canvas.height = height * pixelRatio;
+        const destWidth = Math.round(width * pixelRatio);
+        const destHeight = Math.round(height * pixelRatio);
+        canvas.width = destWidth;
+        canvas.height = destHeight;
         editorCanvasCache = { canvas, context, width, height, pixelRatio };
         // Canvas 尺寸变化，标尺必须重绘
         editorRulerCache = null;
@@ -1938,6 +1963,7 @@ Page({
   drawPattern(forExport: boolean, done?: (tempFilePath?: string) => void) {
     const result = this.data.result;
     if (!result) {
+      console.warn("[pattern-export] draw skipped: missing result", { forExport });
       done?.();
       return;
     }
@@ -1949,22 +1975,41 @@ Page({
       .exec((response) => {
         const canvas = response[0]?.node as WechatMiniprogram.Canvas | undefined;
         if (!canvas) {
+          console.error("[pattern-export] canvas node not found", { forExport, selectorResult: response[0] });
           done?.();
           return;
         }
 
-        const exportCellSize = 36;
         const cssCellSize = this.data.canvasCssWidth / result.widthCells;
-        const cellSize = forExport ? exportCellSize : cssCellSize;
         const rulerSize = forExport ? 42 : 0;
+        const pixelRatio = forExport ? 2 : wx.getSystemInfoSync().pixelRatio;
+        const estimatedStatsWidth = result.widthCells * 36 + rulerSize;
+        const estimatedStatsHeight = forExport ? this.exportUsageHeight(result.usage, estimatedStatsWidth) : 0;
+        const cellSize = forExport ? calculateExportCellSize(result, rulerSize, estimatedStatsHeight, pixelRatio) : cssCellSize;
         const patternWidth = result.widthCells * cellSize;
         const patternHeight = result.heightCells * cellSize;
         const width = patternWidth + rulerSize;
         const exportStatsHeight = forExport ? this.exportUsageHeight(result.usage, width) : 0;
         const height = patternHeight + rulerSize + exportStatsHeight;
-        const pixelRatio = forExport ? 2 : wx.getSystemInfoSync().pixelRatio;
-        canvas.width = width * pixelRatio;
-        canvas.height = height * pixelRatio;
+        const destWidth = Math.round(width * pixelRatio);
+        const destHeight = Math.round(height * pixelRatio);
+        console.log("[pattern-export] render metrics", {
+          forExport,
+          widthCells: result.widthCells,
+          heightCells: result.heightCells,
+          usageCount: result.usage.length,
+          cssCellSize,
+          cellSize,
+          rulerSize,
+          exportStatsHeight,
+          pixelRatio,
+          canvasWidth: width,
+          canvasHeight: height,
+          destWidth,
+          destHeight
+        });
+        canvas.width = destWidth;
+        canvas.height = destHeight;
 
         const context = canvas.getContext("2d") as unknown as CanvasContextLike;
         context.scale(pixelRatio, pixelRatio);
@@ -2067,10 +2112,16 @@ Page({
             canvas,
             width,
             height,
-            destWidth: width * pixelRatio,
-            destHeight: height * pixelRatio,
-            success: (res) => done?.(res.tempFilePath),
-            fail: () => done?.()
+            destWidth,
+            destHeight,
+            success: (res) => {
+              console.log("[pattern-export] canvasToTempFilePath success", { tempFilePath: res.tempFilePath, width, height, destWidth, destHeight });
+              done?.(res.tempFilePath);
+            },
+            fail: (error) => {
+              console.error("[pattern-export] canvasToTempFilePath failed", { error, width, height, destWidth, destHeight });
+              done?.();
+            }
           });
         } else {
           done?.();
@@ -2263,13 +2314,25 @@ Page({
   },
 
   async saveTempImageToAlbum(tempFilePath: string) {
+    console.log("[pattern-export] save temp image to album", { tempFilePath });
     const result = await saveImageWithAlbumPermission(wx, tempFilePath);
+    console.log("[pattern-export] album save result", { result, tempFilePath });
     if (result === "saved") {
       wx.showToast({ title: "已保存", icon: "success" });
       return;
     }
     if (result === "needs-settings") {
-      wx.showToast({ title: "请在设置中允许访问相册", icon: "none" });
+      wx.showModal({
+        title: "需要相册权限",
+        content: "请在设置中开启相册权限后重试",
+        confirmText: "重试",
+        cancelText: "取消",
+        success: (modalResult) => {
+          if (modalResult.confirm) {
+            this.saveTempImageToAlbum(tempFilePath);
+          }
+        }
+      });
       return;
     }
     wx.showToast({ title: "保存失败，请检查权限", icon: "none" });

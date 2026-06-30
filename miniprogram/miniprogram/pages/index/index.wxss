@@ -278,6 +278,14 @@
   color: #333333;
 }
 
+.field-hint {
+  display: block;
+  font-size: 20rpx;
+  color: #94a3b8;
+  margin-top: 4rpx;
+  margin-bottom: 8rpx;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

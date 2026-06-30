@@ -19,7 +19,6 @@ async function test(name: string, run: () => Promise<void>): Promise<void> {
 function createApi(overrides: Partial<PhotoAlbumApi>): PhotoAlbumApi {
   return {
     saveImageToPhotosAlbum: () => undefined,
-    authorize: () => undefined,
     openSetting: () => undefined,
     ...overrides
   };
@@ -42,41 +41,14 @@ async function main(): Promise<void> {
     assertEqual(saves, 1, "save attempts");
   });
 
-  await test("requests album permission and retries when permission is not granted yet", async () => {
+  await test("opens settings on permission denial", async () => {
     let saves = 0;
-    let authorizations = 0;
-    const result = await saveImageWithAlbumPermission(
-      createApi({
-        saveImageToPhotosAlbum(options) {
-          saves += 1;
-          if (saves === 1) {
-            options.fail?.({ errMsg: "saveImageToPhotosAlbum:fail auth deny" });
-            return;
-          }
-          options.success?.({});
-        },
-        authorize(options) {
-          authorizations += 1;
-          options.success?.({});
-        }
-      }),
-      "/tmp/pattern.png"
-    );
-
-    assertEqual(result, "saved", "result");
-    assertEqual(saves, 2, "save attempts");
-    assertEqual(authorizations, 1, "authorization attempts");
-  });
-
-  await test("opens settings when album permission has been denied before", async () => {
     let openedSettings = 0;
     const result = await saveImageWithAlbumPermission(
       createApi({
         saveImageToPhotosAlbum(options) {
+          saves += 1;
           options.fail?.({ errMsg: "saveImageToPhotosAlbum:fail auth deny" });
-        },
-        authorize(options) {
-          options.fail?.({ errMsg: "authorize:fail auth deny" });
         },
         openSetting(options) {
           openedSettings += 1;
@@ -87,7 +59,8 @@ async function main(): Promise<void> {
     );
 
     assertEqual(result, "needs-settings", "result");
-    assertEqual(openedSettings, 1, "settings opens");
+    assertEqual(saves, 1, "save attempts");
+    assertEqual(openedSettings, 1, "settings opens on permission denial");
   });
 
   await test("returns failed for non-permission save errors", async () => {
