@@ -178,11 +178,11 @@ export function applyUsagePatch(usage: BeadUsage[], changes: UsageChange[]): Bea
 
 export function filterPaletteColors(colors: PaletteColor[], query: string, limit = 12): PaletteColor[] {
   const normalizedQuery = query.trim().toLowerCase();
+  const enabled = colors.filter((color) => color.enabled);
   if (!normalizedQuery) {
-    return [];
+    return enabled.slice(0, limit);
   }
-  return colors
-    .filter((color) => color.enabled)
+  return enabled
     .filter((color) => color.code.toLowerCase().includes(normalizedQuery) || color.name.toLowerCase().includes(normalizedQuery))
     .slice(0, limit);
 }

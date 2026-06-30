@@ -401,20 +401,26 @@
         <text>{{selectedEditCellText}}</text>
       </view>
 
+      <view wx:if="{{replaceTargetCode}}" class="edit-replace-banner">
+        <text>将色号 {{replaceTargetCode}} 替换为：</text>
+        <button size="mini" class="edit-replace-cancel" bindtap="cancelReplaceColor">取消</button>
+      </view>
+
       <view class="edit-candidate-section">
         <view class="edit-section-head">
           <text class="edit-section-title">已用色号</text>
-          <text class="edit-section-note">点击选择，点“高亮”可定位</text>
+          <text class="edit-section-note">点击选色，长按替换</text>
         </view>
-        <scroll-view class="edit-candidate-strip" scroll-x="true" enhanced="true" show-scrollbar="false">
+        <scroll-view class="edit-candidate-strip" scroll-x="true" enhanced="true" show-scrollbar="false" scroll-into-view="{{candidateScrollInto}}" scroll-with-animation="true">
           <button
             wx:for="{{editCandidateColors}}"
             wx:key="code"
+            id="cand-{{item.code}}"
             size="mini"
-            class="edit-candidate-chip {{activeEditColor && activeEditColor.code === item.code ? 'active' : ''}}"
+            class="edit-candidate-chip {{activeEditColor && activeEditColor.code === item.code ? 'active' : ''}} {{replaceTargetCode === item.code ? 'replace-target' : ''}}"
             data-code="{{item.code}}"
-            bindtap="selectActiveEditColor"
-            bindlongpress="highlightUsageColor"
+            bindtap="{{replaceTargetCode ? 'confirmReplaceColor' : 'selectActiveEditColor'}}"
+            bindlongpress="startReplaceColor"
           >
             <view class="edit-candidate-swatch" style="background: rgb({{item.rgb[0]}}, {{item.rgb[1]}}, {{item.rgb[2]}});"></view>
             <view class="edit-candidate-text">
@@ -428,9 +434,10 @@
 
       <view class="edit-palette-dropdown">
         <button size="mini" class="edit-dropdown-toggle" bindtap="toggleEditPaletteDropdown">
-          <text>引入新颜色</text>
+          <text wx:if="{{editPaletteDropdownOpen}}">关闭色盘</text>
+          <text wx:else>全部色号</text>
           <text wx:if="{{editPaletteDropdownOpen}}" class="edit-dropdown-state">收起</text>
-          <text wx:else class="edit-dropdown-state">搜索</text>
+          <text wx:else class="edit-dropdown-state">展开</text>
         </button>
         <view wx:if="{{editPaletteDropdownOpen}}" class="edit-dropdown-list">
           <input class="edit-search" placeholder="搜索色号或名称" value="{{editSearchQuery}}" bindinput="onEditSearchInput" />
@@ -441,11 +448,10 @@
               size="mini"
               class="edit-search-row"
               data-code="{{item.code}}"
-              bindtap="selectActiveEditColor"
+              bindtap="{{replaceTargetCode ? 'confirmReplaceColor' : 'selectActiveEditColor'}}"
             >
               <view class="edit-swatch" style="background: rgb({{item.rgb[0]}}, {{item.rgb[1]}}, {{item.rgb[2]}});"></view>
               <text class="edit-search-code">{{item.code}}</text>
-              <text class="edit-search-name">{{item.name}}</text>
             </button>
           </scroll-view>
         </view>
