@@ -101,7 +101,6 @@ def process_grid_scan_bead_pattern(
         widthCells=width_cells,
         heightCells=height_cells,
         paletteVersion=PALETTE_VERSION,
-        cells=rows,
         usage=usage,
         generatedAt=datetime.now(UTC).isoformat(),
         rleRows=encode_grid_rows_as_rle(rows),
@@ -201,6 +200,12 @@ def reconstruct_regular_grid_lines(lines: list[GridLine], length: int, expected_
             expected_lines = reconstruct_expected_grid_lines(lines, expected_cells, step, estimated_line_width(lines))
             if expected_lines:
                 return expected_lines
+
+    # 当用户指定了 target 格数但之前的匹配策略都未命中时，
+    # 不依赖 longest_aligned_run 的局部结果，而是强制用整张图片
+    # 创建 expected_cells 格子的完整网格，避免只覆盖图片的一部分。
+    if expected_cells and 1 <= expected_cells <= MAX_GRID_CELLS:
+        return interpolate_lines(0.0, float(length - 1), expected_cells, estimated_line_width(lines))
 
     run = longest_aligned_run(lines, step)
     if len(run) < 2:
