@@ -8,14 +8,14 @@
   <view class="redeem-panel">
     <text class="redeem-title">权限码</text>
     <view class="redeem-column">
-      <textarea
+      <input
         class="redeem-input"
+        type="text"
         placeholder="AI-XXXXXXXXXXXX"
-        auto-height="{{false}}"
-        show-confirm-bar="{{false}}"
-        cursor-spacing="24"
+        value="{{accessCodeDraft}}"
+        confirm-type="done"
         bindinput="onAccessCodeInput"
-      ></textarea>
+      />
       <button class="redeem-button" loading="{{isLoading}}" bindtap="saveAndRefresh">保存</button>
     </view>
     <text class="saved-code" wx:if="{{hasSavedCode}}">当前权限码：{{accessCode}}</text>

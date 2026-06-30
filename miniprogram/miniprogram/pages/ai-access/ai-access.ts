@@ -42,9 +42,7 @@ Page({
   },
 
   onAccessCodeInput(event: WechatMiniprogram.Input) {
-    const value = event.detail.value;
-    this.setData({ accessCodeDraft: value });
-    return value;
+    this.setData({ accessCodeDraft: event.detail.value });
   },
 
   pasteAccessCode() {

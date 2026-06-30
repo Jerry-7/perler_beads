@@ -61,17 +61,15 @@
 }
 
 .redeem-input {
-  display: block;
   width: 100%;
-  min-height: 120rpx;
-  padding: 20rpx;
+  height: 76rpx;
+  padding: 0 20rpx;
   border-radius: 10rpx;
   border: 1rpx solid #cbd5e1;
   background: #f8fafc;
   box-sizing: border-box;
   color: #0f172a;
   font-size: 26rpx;
-  line-height: 1.5;
 }
 
 .redeem-button,
