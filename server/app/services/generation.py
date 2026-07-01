@@ -184,7 +184,6 @@ class GenerationStore:
             widthCells=width_cells,
             heightCells=height_cells,
             paletteVersion=PALETTE_VERSION,
-            cells=rows,
             usage=usage,
             generatedAt=datetime.now(UTC).isoformat(),
             rleRows=rle_rows,

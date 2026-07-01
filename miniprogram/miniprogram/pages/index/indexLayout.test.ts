@@ -395,3 +395,24 @@ test("exported pattern image draws prominent five-cell grid lines", () => {
   assert(pageTs.includes("row += 5"), "horizontal group grid lines should use a step of five cells");
   assert(pageTs.includes("#ff2f92"), "group grid line color should be visually distinct");
 });
+
+test("PC devtools export downloads and saves to local persistent storage", () => {
+  const exportStart = pageTs.indexOf("exportPng()");
+  const exportEnd = pageTs.indexOf("  isDevtoolsTempPath", exportStart);
+  const exportBody = pageTs.slice(exportStart, exportEnd);
+
+  assert(exportStart >= 0, "missing exportPng method");
+  assert(exportBody.includes("showDevtoolsExportMenu"), "devtools temp path should use the PC export menu");
+  assert(pageTs.includes("wx.downloadFile"), "PC export should download http temp file first");
+  assert(pageTs.includes("wx.getFileSystemManager"), "PC export should use file system to save");
+  assert(pageTs.includes("wx.previewImage"), "PC export should preview saved image");
+});
+test("AI image devtools temp path previews instead of using pattern export menu", () => {
+  const aiSaveStart = pageTs.indexOf("async saveAiTempImageToAlbum");
+  const aiSaveEnd = pageTs.indexOf("exportPng()", aiSaveStart);
+  const aiSaveBody = pageTs.slice(aiSaveStart, aiSaveEnd);
+
+  assert(aiSaveStart >= 0, "missing AI temp image save method");
+  assert(aiSaveBody.includes("wx.previewImage"), "AI devtools temp image should open preview");
+  assert(!aiSaveBody.includes("showDevtoolsExportMenu"), "AI image save should not use pattern export menu");
+});

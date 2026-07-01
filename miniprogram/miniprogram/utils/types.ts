@@ -39,12 +39,19 @@ export interface BeadUsage {
 }
 
 export interface PatternResult {
+  // 格子列数
   widthCells: number;
+  // 格子行数
   heightCells: number;
+  // 色号调色板版本号
   paletteVersion: string;
+  // 二维矩阵 [row][col]，每个格子是一个 PatternCell
   cells: PatternCell[][];
+  // 色号统计：每种 bead 用了多少颗
   usage: BeadUsage[];
+  // 生成时间（ISO 8601）
   generatedAt: string;
+  // 游程编码压缩行，用于减少传输体积
   rleRows?: string[] | null;
 }
 

@@ -38,8 +38,9 @@ export function calculateExportCellSize(
   pixelRatio: number
 ): number {
   const normalizedRatio = Number.isFinite(pixelRatio) && pixelRatio > 0 ? pixelRatio : 1;
-  const availableWidth = EXPORT_MAX_CANVAS_SIDE_PX / normalizedRatio - rulerSize;
+  const availableWidth = EXPORT_MAX_CANVAS_SIDE_PX / normalizedRatio - rulerSize; 
   const availableHeight = EXPORT_MAX_CANVAS_SIDE_PX / normalizedRatio - rulerSize - statsHeight;
+  // 分别计算一个格子的宽、高最大值
   const widthLimitedCell = Math.floor(availableWidth / Math.max(1, result.widthCells));
   const heightLimitedCell = Math.floor(availableHeight / Math.max(1, result.heightCells));
   const limitedCellSize = Math.min(EXPORT_DEFAULT_CELL_SIZE_PX, widthLimitedCell, heightLimitedCell);

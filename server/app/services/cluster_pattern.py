@@ -191,7 +191,6 @@ def _process_cluster_bead_pattern(
         widthCells=width_cells,
         heightCells=height_cells,
         paletteVersion=PALETTE_VERSION,
-        cells=rows,
         usage=usage,
         generatedAt=datetime.now(UTC).isoformat(),
         rleRows=encode_grid_rows_as_rle(rows),

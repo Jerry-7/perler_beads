@@ -10,67 +10,120 @@ DEFAULT_AI_IMAGE_API_URL = "https://www.packyapi.com/v1/images/edits"
 DEFAULT_AI_IMAGE_MODEL = "gpt-image-2"
 DEFAULT_AI_IMAGE_PROMPT = (
     '''
-    
-    
-    Create a {resolution}x{resolution} pixel art sprite/pattern, strictly derived from the provided photo.
-    
-    CRITICAL: The output image dimensions MUST be exactly {resolution}x{resolution} pixels. 
-        Use nearest-neighbor scaling logic. Every pixel must be a SOLID, FLAT color. 
-        NO anti-aliasing, NO color mixing at edges, NO alpha transparency. 
-        Do NOT draw grid lines on the image. Background is solid light gray.
-    
-    Rules:
-    - Output must be a square grid pixel art design.
-    - Each pixel cell represents exactly one bead.
-    - No gradients, no anti-aliasing, no shading.
-    - Each cell must be a single flat solid color only.
-    - Strong edge clarity and blocky structure.
-    
-    PRIMARY GOALS:
-    - Preserve the subject's likeness, silhouette, key colors, iconic features, and mood.
-    - For people/animals: extract expressive facial/body cues. For objects: retain distinct shape, material hints, and recognizable details.
-    
-    CRAFTING CONSTRAINTS (Perler bead / fuse bead pattern):
-    - The output MUST be a clear, gridded diagram where each cell is exactly 1 pixel.
-    - Every grid cell contains ONE solid, flat color (no gradients, no anti-aliasing, no dithering).
-    - Grid lines are visible (light gray or thin black borders) to separate each bead position.
-    - Maximum number of unique colors: {max_colors}.
-    - Use bold 1‑pixel dark outlines around major shapes.
-    - All colored pixels must form connected clusters (no isolated single pixels floating alone).
-    - Background: solid light gray (#E0E0E0 or similar) – clearly different from the subject.
-    
-    STYLE & DETAIL:
-    - Generation style: {style_prompt}.
-    - Detail level: {ai_detail}.
-    - 3D effect: {effect_3d} (if applicable, only via shading).
-    - Shading: {shading} (must be blocky, using distinct color steps, not smooth).
-    
-    ADDITIONAL INSTRUCTIONS:
-    - The image must look like a ready‑to‑use bead placement chart – each pixel corresponds to one bead position.
-    - Ensure the whole subject fits comfortably within the {resolution}x{resolution} grid with adequate margins.
-    - Expression: dynamic and expressive within the pixel limitation.
-    
-    NEGATIVE PROMPT:
-    {negative_prompt} (explicitly forbid: anti‑aliasing, gradients, dithering, semi‑transparent pixels, floating orphan pixels, blur, smooth shading, and non‑grid layouts).
+On a {resolution}×{resolution} square canvas, create a pixel‑art sprite/pattern strictly derived from the provided photo.
+
+【MODIFIED】Canvas & Aspect‑Ratio Core Rules (Most Important):
+
+Absolutely forbid stretching, squashing, or distorting the original photo to fit the {resolution}×{resolution} square canvas.
+
+Strictly preserve the original photo’s aspect ratio (do not crop the subject unless the edges contain completely irrelevant clutter).
+
+Use a letterbox / pillarbox approach: place the subject at the center of the canvas in its original proportion, and fill all remaining empty areas uniformly with the solid background colour (light grey #E0E0E0).
+
+Ensure that, while keeping the original ratio, the subject fits completely and comfortably inside the canvas with adequate margins on all sides.
+
+Critical Execution Logic (Pixel‑Level):
+
+Use nearest‑neighbour scaling logic. Every pixel must be a solid, flat colour.
+
+NO anti‑aliasing, NO colour mixing at edges, NO alpha transparency.
+
+Draw clear grid lines on the image (each pixel cell corresponds to one bead).
+
+Basic Rules:
+
+Output must be a grid‑based pixel art design.
+
+Each pixel cell represents exactly one bead and must be a single flat solid colour only.
+
+Strong edge clarity and blocky structure are required.
+
+Primary Goals:
+
+Preserve the subject's likeness, silhouette, key colours, iconic features, and mood.
+
+For people/animals: extract expressive facial/body cues. For objects: retain distinct shape, material hints, and recognisable details.
+
+Crafting Constraints (Perler Bead / Fuse Bead Pattern):
+
+The output MUST be a clear, gridded diagram where each cell is exactly 1 pixel.
+
+Every grid cell contains ONE solid, flat colour.
+
+Grid lines must be visible and clear to separate each bead position.
+
+Maximum number of unique colours: {max_colors}.
+
+Use bold 1‑pixel dark outlines around major shapes.
+
+All coloured pixels must form connected clusters (no isolated single pixels floating alone).
+
+Background: solid light grey (#E0E0E0 or similar) – clearly different from the subject.
+
+Style & Detail:
+
+Generation style: {style_prompt}.
+
+Detail level: {ai_detail}.
+
+3D effect: {effect_3d} (if applicable, only via blocky shading).
+
+Shading: {shading} (must be blocky, using distinct colour steps, not smooth).
+
+Additional Instructions:
+
+The image must look like a ready‑to‑use bead placement chart – each pixel corresponds to one bead position.
+
+Ensure the whole subject fits comfortably within the {resolution}×{resolution} grid with adequate margins, while strictly maintaining the original aspect ratio.
+
+Expression: dynamic and expressive within the pixel limitation.
+
+Negative Prompt:
+{negative_prompt} (explicitly forbid: anti‑aliasing, gradients, dithering, semi‑transparent pixels, floating orphan pixels, blur, smooth shading, non‑grid layouts, and any form of image stretching or warping).
     '''
     # '''
-    # A {resolution}x{resolution} pixel art sprite/pattern, strictly based on the provided photo.
-    # Primary goal: preserve the subject likeness, silhouette, key colors, iconic features, and mood.
-    # If the subject is a person or animal, extract expressive facial/body cues; otherwise preserve the object's distinct shape, material cues, and recognizable details. Generation style: {style_prompt}.
-    # Detail level: {ai_detail}. 3D effect: {effect_3d}. Shading: {shading}.
-    # Designed as a physical Perler bead pegboard pattern. Maximum {max_colors} distinct solid colors.
-    # Grid requirement: The image MUST feature a clear, visible thin black grid overlay, dividing the artwork into a strict square grid (like graph paper). Each grid cell MUST contain ONLY ONE pure solid color block (1 cell = 1 bead). Hard pixel edges, stair-step shading only.
-    # Negative prompt: {negative_prompt}.
+    #
+    # Create a {resolution}x{resolution} pixel art sprite/pattern, strictly derived from the provided photo.
+    #
+    # CRITICAL:
+    # - Use nearest-neighbor scaling logic. Every pixel must be a SOLID, FLAT color.
+    # - NO anti-aliasing, NO color mixing at edges, NO alpha transparency.
+    # - Draw grid lines on the image.
+    #
+    # Rules:
+    # - Output must be a grid pixel art design.
+    # - Each pixel cell represents exactly one bead.
+    # - Each cell must be a single flat solid color only.
+    # - Strong edge clarity and blocky structure.
+    # - Keep the original image ratio
+    #
+    # PRIMARY GOALS:
+    # - Preserve the subject's likeness, silhouette, key colors, iconic features, and mood.
+    # - For people/animals: extract expressive facial/body cues. For objects: retain distinct shape, material hints, and recognizable details.
+    #
+    # CRAFTING CONSTRAINTS (Perler bead / fuse bead pattern):
+    # - The output MUST be a clear, gridded diagram where each cell is exactly 1 pixel.
+    # - Every grid cell contains ONE solid, flat color.
+    # - Grid lines are visible and clear to separate each bead position.
+    # - Maximum number of unique colors: {max_colors}.
+    # - Use bold 1‑pixel dark outlines around major shapes.
+    # - All colored pixels must form connected clusters (no isolated single pixels floating alone).
+    # - Background: solid light gray (#E0E0E0 or similar) – clearly different from the subject.
+    #
+    # STYLE & DETAIL:
+    # - Generation style: {style_prompt}.
+    # - Detail level: {ai_detail}.
+    # - 3D effect: {effect_3d} (if applicable, only via shading).
+    # - Shading: {shading} (must be blocky, using distinct color steps, not smooth).
+    #
+    # ADDITIONAL INSTRUCTIONS:
+    # - The image must look like a ready‑to‑use bead placement chart – each pixel corresponds to one bead position.
+    # - Ensure the whole subject fits comfortably within the {resolution}x{resolution} grid with adequate margins.
+    # - Expression: dynamic and expressive within the pixel limitation.
+    #
+    # NEGATIVE PROMPT:
+    # {negative_prompt} (explicitly forbid: anti‑aliasing, gradients, dithering, semi‑transparent pixels, floating orphan pixels, blur, smooth shading, and non‑grid layouts).
     # '''
-    # "A {resolution}x{resolution} pixel art sprite/pattern, strictly based on the provided photo. "
-    # "Primary goal: preserve the subject likeness, silhouette, key colors, iconic features, and mood. "
-    # "If the subject is a person or animal, extract expressive facial/body cues; otherwise preserve the object's "
-    # "distinct shape, material cues, and recognizable details. Generation style: {style_prompt}. "
-    # "Detail level: {ai_detail}. 3D effect: {effect_3d}. Shading: {shading}. "
-    # "Designed as a physical Perler bead pattern on a clear grid of {size} cells to aid placement. Strict crafting constraints: max {max_colors} colors, "
-    # "bold 1-pixel dark outlines, no anti-aliasing, no smooth gradients, connected pixel clusters, "
-    # "zero isolated floating pixels, solid light-gray background. Dynamic and expressive. "
-    # "Negative prompt: {negative_prompt}."
 )
 
 

@@ -15,7 +15,7 @@ import {
 import { aiImageProgressText, nextAiImageProgress } from "../../utils/aiImageProgress";
 import { getStoredAccessCode } from "../../utils/accessCode";
 import { aiImageUrl, createAiImage, getAccessKeySummary, getAiImage, getGeneration, getPalette, recommendPatternSize, uploadGeneration, type ColorComplexity } from "../../utils/api";
-import { calculateExportCellSize, calculatePreviewCanvasSize, calculateZoomedCanvasSize } from "../../utils/canvasSizing";
+import { calculateExportCellSize, calculatePreviewCanvasSize, calculateZoomedCanvasSize, EXPORT_MAX_CANVAS_SIDE_PX } from "../../utils/canvasSizing";
 import {
   applyEditorPatch,
   createEditorPatchHistory,
@@ -32,7 +32,7 @@ import {
   type EditorPatchType
 } from "../../utils/patternCanvasEditor";
 import { shouldDrawCellLabel } from "../../utils/patternDrawing";
-import { filterPaletteColors } from "../../utils/patternEditing";
+import { decodeRleRows, filterPaletteColors } from "../../utils/patternEditing";
 import { previewPatternImage } from "../../utils/patternPreview";
 import { applyPatternSizeOption, PATTERN_SIZE_OPTIONS } from "../../utils/patternSizeOptions";
 import { buildPatternSizeWarning } from "../../utils/patternSizeWarning";
@@ -676,11 +676,26 @@ Page({
         throw new Error(completed.error || "图纸生成失败");
       }
 
-      const canvasSize = calculatePreviewCanvasSize(completed.result, wx.getSystemInfoSync().windowWidth);
-      const resultBeadCount = this.calculateUsageTotal(completed.result.usage);
+      const completedResult = completed.result as PatternResult & { cells?: PatternCell[][] | null };
+      if (!completedResult.cells && completedResult.rleRows) {
+        const usageMap = new Map(completedResult.usage.map((u) => [u.beadCode, u]));
+        completedResult.cells = decodeRleRows(
+          completedResult.rleRows,
+          completedResult.widthCells,
+          completedResult.heightCells,
+          usageMap
+        );
+      }
+      if (!completedResult.cells) {
+        throw new Error("图纸数据缺少格子信息");
+      }
+      const result = completedResult as PatternResult;
+
+      const canvasSize = calculatePreviewCanvasSize(result, wx.getSystemInfoSync().windowWidth);
+      const resultBeadCount = this.calculateUsageTotal(result.usage);
       this.setData({
-        result: completed.result,
-        usage: completed.result.usage,
+        result,
+        usage: result.usage,
         resultBeadCount,
         baseCanvasCssWidth: canvasSize.width,
         baseCanvasCssHeight: canvasSize.height,
@@ -2062,13 +2077,29 @@ Page({
         const cssCellSize = this.data.canvasCssWidth / result.widthCells;
         const rulerSize = forExport ? 42 : 0;
         const pixelRatio = forExport ? 2 : wx.getSystemInfoSync().pixelRatio;
-        const estimatedStatsWidth = result.widthCells * 36 + rulerSize;
-        const estimatedStatsHeight = forExport ? this.exportUsageHeight(result.usage, estimatedStatsWidth) : 0;
-        const cellSize = forExport ? calculateExportCellSize(result, rulerSize, estimatedStatsHeight, pixelRatio) : cssCellSize;
-        const patternWidth = result.widthCells * cellSize;
+
+        // 先以无 stats 约束计算 cellSize，避免循环估算误差。
+        // 原来以 cellSize=36 估算 stats 宽度 → 推算 stats 高度 → 约束 cellSize，
+        // 但大图案时 cellSize 被缩小到 12，实际宽度与估算宽度差异巨大，
+        // 导致 stats 行数估算偏少 → cellSize 偏大 → 总高可能超限。
+        let cellSize = forExport
+          ? calculateExportCellSize(result, rulerSize, 0, pixelRatio)
+          : cssCellSize;
+
+        let patternWidth = result.widthCells * cellSize;
+        const maxSide = EXPORT_MAX_CANVAS_SIDE_PX / Math.max(1, pixelRatio);
+        const exportStatsHeight = forExport
+          ? this.exportUsageHeight(result.usage, patternWidth + rulerSize)
+          : 0;
+
+        // 如果加上 stats 后总高超限，以实际 stats 高度重新约束 cellSize
+        if (forExport && result.heightCells * cellSize + rulerSize + exportStatsHeight > maxSide) {
+          cellSize = calculateExportCellSize(result, rulerSize, exportStatsHeight, pixelRatio);
+          patternWidth = result.widthCells * cellSize;
+        }
+
         const patternHeight = result.heightCells * cellSize;
         const width = patternWidth + rulerSize;
-        const exportStatsHeight = forExport ? this.exportUsageHeight(result.usage, width) : 0;
         const height = patternHeight + rulerSize + exportStatsHeight;
         const destWidth = Math.round(width * pixelRatio);
         const destHeight = Math.round(height * pixelRatio);
@@ -2208,6 +2239,9 @@ Page({
       });
   },
 
+  // 导出色号统计的布局常量
+  // 排版：左边距 14 → 色块(20x20) → 间距 8 → 文字 "S01 x 999"
+  // 每个 chip 最小宽度 118，行高 34，标题高 54，底部留白 16
   exportUsageHeight(usage: BeadUsage[], width: number) {
     if (!usage.length) {
       return 0;
@@ -2374,7 +2408,7 @@ Page({
           wx.showToast({ title: "下载 AI 图片失败", icon: "none" });
           return;
         }
-        await this.saveTempImageToAlbum(response.tempFilePath);
+        await this.saveAiTempImageToAlbum(response.tempFilePath, aiImagePath);
       },
       fail: () => {
         wx.showToast({ title: "下载 AI 图片失败", icon: "none" });
@@ -2382,57 +2416,90 @@ Page({
     });
   },
 
+  async saveAiTempImageToAlbum(tempFilePath: string, previewUrl: string) {
+    if (this.isDevtoolsTempPath(tempFilePath)) {
+      console.warn("[ai-image-export] devtools temp path cannot be saved to album", { tempFilePath, previewUrl });
+      wx.previewImage({ current: previewUrl, urls: [previewUrl] });
+      wx.showToast({ title: "PC 调试请在预览中保存，真机可保存到相册", icon: "none" });
+      return;
+    }
+
+    console.log("[ai-image-export] save temp image to album", { tempFilePath });
+    await this.saveTempImageToAlbum(tempFilePath);
+  },
+
   exportPng() {
-    const isDevtools = wx.getSystemInfoSync().platform === "devtools";
     this.drawPattern(true, async (tempFilePath) => {
       if (!tempFilePath) {
         wx.showToast({ title: "导出失败", icon: "none" });
         return;
       }
-      if (isDevtools) {
-        // PC 开发者工具没有真实相册，弹出分享菜单可保存到本地
-        wx.showShareImageMenu({ path: tempFilePath });
+      if (this.isDevtoolsTempPath(tempFilePath)) {
+        console.warn("[pattern-export] devtools temp path uses share image menu", { tempFilePath });
+        this.showDevtoolsExportMenu(tempFilePath);
         return;
       }
       await this.saveTempImageToAlbum(tempFilePath);
     });
   },
 
-  /**
-   * 保存临时图片到相册。
-   * 微信开发者工具中 canvasToTempFilePath 返回 http://tmp/... 格式的路径，
-   * saveImageToPhotosAlbum 无法直接处理，需要先 downloadFile 转为本地路径。
-   */
-  async saveTempImageToAlbum(tempFilePath: string) {
-    let localPath = tempFilePath;
+  isDevtoolsTempPath(path: string) {
+    return path.startsWith("http://tmp/") || path.startsWith("http://127.0.0.1") || path.startsWith("https://tmp/");
+  },
 
-    // 开发者工具中 temp 文件是 HTTP URL，需先下载到本地
-    if (tempFilePath.startsWith("http://tmp/") || tempFilePath.startsWith("http://127.0.0.1")) {
-      console.log("[pattern-export] downloading http temp file for album save", { tempFilePath });
-      try {
-        localPath = await new Promise<string>((resolve, reject) => {
-          wx.downloadFile({
-            url: tempFilePath,
-            success: (res) => {
-              if (res.statusCode >= 200 && res.statusCode < 300 && res.tempFilePath) {
-                console.log("[pattern-export] downloadFile success", { localPath: res.tempFilePath });
-                resolve(res.tempFilePath);
-              } else {
-                reject(new Error(`downloadFile status ${res.statusCode}`));
-              }
-            },
-            fail: (err) => reject(new Error(err.errMsg || "downloadFile failed"))
+  showDevtoolsExportMenu(tempFilePath: string) {
+    // PC 开发者工具：HTTP 临时路径无法直接用系统功能保存。
+    // 先下载到本地，再用 saveFile 持久化到用户目录，
+    // 最后 previewImage 打开预览（支持长按/右键保存）。
+    console.log("[pattern-export] devtools export, downloading", { tempFilePath });
+    wx.downloadFile({
+      url: tempFilePath,
+      success: async (res) => {
+        if (res.statusCode < 200 || res.statusCode >= 300 || !res.tempFilePath) {
+          console.error("[pattern-export] downloadFile bad status", res.statusCode);
+          wx.showToast({ title: "下载失败，请真机测试", icon: "none" });
+          return;
+        }
+        const localPath = res.tempFilePath;
+        console.log("[pattern-export] downloaded, saving to persistent storage", { localPath });
+
+        // 将临时文件持久化到用户目录，PC 上可定位到文件
+        try {
+          const fs = wx.getFileSystemManager();
+          const saved = await new Promise<{ savedFilePath: string }>((resolve, reject) => {
+            fs.saveFile({
+              tempFilePath: localPath,
+              success: (res) => resolve(res),
+              fail: (err) => reject(err)
+            });
           });
-        });
-      } catch (error) {
-        console.error("[pattern-export] downloadFile failed, falling back to original path", error);
-        // 回退到原始路径尝试
+          console.log("[pattern-export] saveFile success", { savedFilePath: saved.savedFilePath });
+          // 预览图片，PC 上支持 Ctrl+S / 右键保存
+          wx.previewImage({ urls: [saved.savedFilePath], current: saved.savedFilePath });
+          wx.showToast({ title: "已保存到本地，可在预览中右键另存", icon: "success", duration: 2500 });
+        } catch (saveErr) {
+          console.warn("[pattern-export] saveFile failed, preview with download path", saveErr);
+          wx.previewImage({ urls: [localPath], current: localPath });
+          wx.showToast({ title: "请在预览中右键保存图片", icon: "none", duration: 2000 });
+        }
+      },
+      fail: (err) => {
+        console.error("[pattern-export] downloadFile failed", err);
+        wx.showToast({ title: "下载失败，请真机测试", icon: "none" });
       }
+    });
+  },
+
+  async saveTempImageToAlbum(tempFilePath: string) {
+    if (this.isDevtoolsTempPath(tempFilePath)) {
+      console.warn("[pattern-export] skip album save for devtools temp path", { tempFilePath });
+      this.showDevtoolsExportMenu(tempFilePath);
+      return;
     }
 
-    console.log("[pattern-export] save temp image to album", { tempFilePath, localPath });
-    const result = await saveImageWithAlbumPermission(wx, localPath);
-    console.log("[pattern-export] album save result", { result, localPath });
+    console.log("[pattern-export] save temp image to album", { tempFilePath });
+    const result = await saveImageWithAlbumPermission(wx, tempFilePath);
+    console.log("[pattern-export] album save result", { result, tempFilePath });
     if (result === "saved") {
       wx.showToast({ title: "已保存", icon: "success" });
       return;

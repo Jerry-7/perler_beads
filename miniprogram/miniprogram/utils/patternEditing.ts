@@ -231,3 +231,59 @@ function replaceBeadLikeCell(cell: Exclude<PatternCell, { empty: true }>, palett
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
+
+/**
+ * 从 RLE 字符串和 usage 表重建 cells 二维矩阵。
+ * RLE 格式：每行 "CODE:COUNT,CODE:COUNT,..."，CODE="EMPTY" 表示空格子。
+ * usage 提供色号 → beadRgb / beadName 的映射。
+ * sourceRgb 和 distance 在编辑后已无实际意义，使用珠子自身 RGB 填充。
+ */
+export function decodeRleRows(
+  rleRows: string[],
+  widthCells: number,
+  heightCells: number,
+  usageMap: Map<string, BeadUsage>
+): PatternCell[][] {
+  const cells: PatternCell[][] = [];
+
+  for (let row = 0; row < heightCells; row++) {
+    const rowCells: PatternCell[] = [];
+    const rle = rleRows[row];
+
+    if (!rle) {
+      // 空行全部填 EMPTY
+      for (let col = 0; col < widthCells; col++) {
+        rowCells.push({ x: col, y: row, empty: true });
+      }
+    } else {
+      let col = 0;
+      for (const run of rle.split(",")) {
+        const sepIndex = run.lastIndexOf(":");
+        if (sepIndex < 0) continue;
+        const code = run.slice(0, sepIndex);
+        const count = Number(run.slice(sepIndex + 1));
+        if (code === "EMPTY" || !Number.isFinite(count)) {
+          for (let i = 0; i < (Number.isFinite(count) ? count : 0); i++, col++) {
+            rowCells.push({ x: col, y: row, empty: true });
+          }
+        } else {
+          const beadInfo = usageMap.get(code);
+          for (let i = 0; i < count; i++, col++) {
+            rowCells.push({
+              x: col,
+              y: row,
+              sourceRgb: beadInfo?.beadRgb ?? [0, 0, 0],
+              beadCode: code,
+              beadName: beadInfo?.beadName ?? code,
+              beadRgb: beadInfo?.beadRgb ?? [0, 0, 0],
+              distance: 0,
+            });
+          }
+        }
+      }
+    }
+    cells.push(rowCells);
+  }
+
+  return cells;
+}

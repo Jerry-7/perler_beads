@@ -81,7 +81,7 @@ class PatternResult(BaseModel):
     widthCells: int
     heightCells: int
     paletteVersion: str
-    cells: list[list[PatternCell]]
+    cells: list[list[PatternCell]] | None = None
     usage: list[BeadUsage]
     generatedAt: str
     rleRows: list[str] | None = None
