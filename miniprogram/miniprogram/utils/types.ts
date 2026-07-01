@@ -39,12 +39,19 @@ export interface BeadUsage {
 }
 
 export interface PatternResult {
+  // 格子列数
   widthCells: number;
+  // 格子行数
   heightCells: number;
+  // 色号调色板版本号
   paletteVersion: string;
+  // 二维矩阵 [row][col]，每个格子是一个 PatternCell
   cells: PatternCell[][];
+  // 色号统计：每种 bead 用了多少颗
   usage: BeadUsage[];
+  // 生成时间（ISO 8601）
   generatedAt: string;
+  // 游程编码压缩行，用于减少传输体积
   rleRows?: string[] | null;
 }
 
@@ -95,4 +102,83 @@ export function isEmptyCell(cell: PatternCell): cell is EmptyCell {
 
 export function isBeadCell(cell: PatternCell): cell is BeadCell {
   return "beadRgb" in cell;
+}
+
+export interface UserSummary {
+  openid: string;
+  createdAt: string;
+  lastLoginAt: string;
+}
+
+export interface WechatLoginResponse {
+  sessionToken: string;
+  expiresAt: string;
+  userSummary: UserSummary;
+}
+
+export interface AiPackageOffer {
+  code: string;
+  title: string;
+  amountFen: number;
+  quotaAmount: number;
+}
+
+export interface AiAccessSummary {
+  remainingQuota: number;
+  hasFreeAccess: boolean;
+  freeAccessExpiresAt?: string | null;
+  canGenerateAi: boolean;
+  activePackageOffers: AiPackageOffer[];
+}
+
+export interface AiOrderPaymentParams {
+  timeStamp: string;
+  nonceStr: string;
+  package: string;
+  signType: "RSA";
+  paySign: string;
+}
+
+export interface CreateAiOrderResponse {
+  orderNo: string;
+  packageCode: string;
+  amountFen: number;
+  quotaAmount: number;
+  status: "created" | "paid" | "failed" | "closed";
+  paymentParams: AiOrderPaymentParams;
+}
+
+export interface RedeemAdminCodeResponse {
+  hasFreeAccess: boolean;
+  freeAccessExpiresAt: string;
+}
+
+export interface AccessKeySummary {
+  code: string;
+  totalUses: number;
+  usedCount: number;
+  remainingUses: number;
+  status: string;
+  expiresAt?: string | null;
+  canGenerateAi: boolean;
+}
+
+export interface AdminLoginResponse {
+  adminToken: string;
+  expiresAt: string;
+}
+
+export interface AccessKeyItem {
+  code: string;
+  totalUses: number;
+  usedCount: number;
+  remainingUses: number;
+  status: string;
+  expiresAt?: string | null;
+  createdAt: string;
+  createdBy: string;
+}
+
+export interface CreateAccessKeysResponse {
+  keys: AccessKeyItem[];
 }

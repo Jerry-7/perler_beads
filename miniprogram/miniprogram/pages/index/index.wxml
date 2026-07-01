@@ -1,4 +1,26 @@
 <view class="maker-page">
+  <!-- <view class="container">
+    <view class="card">
+      <text class="title">完善个人资料</text>
+      
+      <button class="avatar-wrapper" open-type="chooseAvatar" bindchooseavatar="onChooseAvatar">
+        <image class="avatar" src="{{avatarUrl}}"></image>
+      </button>
+      
+      <input type="nickname" class="nickname-input" placeholder="请输入或选择昵称" bindblur="onBlurNickname"/>
+      
+      <button type="primary" bindtap="submitProfile" style="margin-top: 20rpx;">保存头像昵称</button>
+    </view>
+
+    <view class="card" style="margin-top: 40rpx;">
+      <text class="title">手机号绑定</text>
+      <p class="desc">部分功能需要绑定手机号后方可使用</p>
+      <button type="warn" open-type="getPhoneNumber" bindgetphonenumber="onGetPhoneNumber">
+        一键绑定微信手机号
+      </button>
+    </view>
+</view> -->
+
   <view class="maker-hero">
     <view class="hero-copy">
       <text class="hero-kicker">制作</text>
@@ -27,7 +49,10 @@
   <view wx:if="{{activeTool === 'ai'}}" class="panel control-panel">
     <view class="panel-heading">
       <text class="panel-title">AI 生图设置</text>
-      <button class="link-button" size="mini" bindtap="backToToolHome">返回</button>
+      <view class="heading-actions">
+        <button class="link-button" size="mini" bindtap="openAiAccessPage">权限码</button>
+        <button class="link-button" size="mini" bindtap="backToToolHome">返回</button>
+      </view>
     </view>
 
     <view class="preview {{imagePath ? 'has-image' : ''}}" bindtap="chooseImage">
@@ -98,6 +123,11 @@
           </view>
         </picker>
       </label>
+    </view>
+
+    <view class="ai-access-strip">
+      <text>{{aiAccessText}}</text>
+      <button size="mini" class="ai-access-link" bindtap="openAiAccessPage">权限码</button>
     </view>
 
     <button class="generate-button" loading="{{isGeneratingAiImage}}" disabled="{{!imagePath || isGeneratingAiImage}}" bindtap="generateAiImage">
@@ -209,10 +239,22 @@
       </picker>
     </label>
 
-    <label class="field">
-      <text class="field-label">最大颜色数 (4-64)</text>
-      <input type="number" value="{{patternMaxColors}}" bindinput="onPatternMaxColorsInput" />
-    </label>
+    <view wx:if="{{samplingMode === 'cluster-ms'}}" class="field">
+      <text class="field-label">合并力度 ({{clusterQuantile}})</text>
+      <text class="field-hint">越小合并越激进，颜色越少</text>
+      <slider min="5" max="40" step="1" value="{{clusterQuantileSlider}}" activeColor="#6366f1" block-size="16" bindchange="onClusterQuantileChange" />
+    </view>
+
+    <view wx:if="{{samplingMode === 'cluster-dbscan'}}" class="field">
+      <text class="field-label">颜色距离阈值 ({{clusterEps}})</text>
+      <text class="field-hint">越小保留颜色越多，越大合并越多</text>
+      <slider min="10" max="60" step="1" value="{{clusterEps}}" activeColor="#f59e0b" block-size="16" bindchange="onClusterEpsChange" />
+    </view>
+
+    <view class="field">
+      <text class="field-label">最大颜色数 ({{patternMaxColors}})</text>
+      <slider min="4" max="64" step="1" value="{{patternMaxColors}}" activeColor="#10b981" block-size="16" bindchange="onPatternMaxColorsChange" />
+    </view>
 
     <button class="generate-button" loading="{{isGenerating}}" disabled="{{isGenerating || (patternSource === 'ai' ? !aiImageId : !imagePath)}}" bindtap="generatePattern">
       生成图纸
@@ -359,20 +401,26 @@
         <text>{{selectedEditCellText}}</text>
       </view>
 
+      <view wx:if="{{replaceTargetCode}}" class="edit-replace-banner">
+        <text>将色号 {{replaceTargetCode}} 替换为：</text>
+        <button size="mini" class="edit-replace-cancel" bindtap="cancelReplaceColor">取消</button>
+      </view>
+
       <view class="edit-candidate-section">
         <view class="edit-section-head">
           <text class="edit-section-title">已用色号</text>
-          <text class="edit-section-note">点击选择，点“高亮”可定位</text>
+          <text class="edit-section-note">点击选色，长按替换</text>
         </view>
-        <scroll-view class="edit-candidate-strip" scroll-x="true" enhanced="true" show-scrollbar="false">
+        <scroll-view class="edit-candidate-strip" scroll-x="true" enhanced="true" show-scrollbar="false" scroll-into-view="{{candidateScrollInto}}" scroll-with-animation="true">
           <button
             wx:for="{{editCandidateColors}}"
             wx:key="code"
+            id="cand-{{item.code}}"
             size="mini"
-            class="edit-candidate-chip {{activeEditColor && activeEditColor.code === item.code ? 'active' : ''}}"
+            class="edit-candidate-chip {{activeEditColor && activeEditColor.code === item.code ? 'active' : ''}} {{replaceTargetCode === item.code ? 'replace-target' : ''}}"
             data-code="{{item.code}}"
-            bindtap="selectActiveEditColor"
-            bindlongpress="highlightUsageColor"
+            bindtap="{{replaceTargetCode ? 'confirmReplaceColor' : 'selectActiveEditColor'}}"
+            bindlongpress="startReplaceColor"
           >
             <view class="edit-candidate-swatch" style="background: rgb({{item.rgb[0]}}, {{item.rgb[1]}}, {{item.rgb[2]}});"></view>
             <view class="edit-candidate-text">
@@ -386,9 +434,10 @@
 
       <view class="edit-palette-dropdown">
         <button size="mini" class="edit-dropdown-toggle" bindtap="toggleEditPaletteDropdown">
-          <text>引入新颜色</text>
+          <text wx:if="{{editPaletteDropdownOpen}}">关闭色盘</text>
+          <text wx:else>全部色号</text>
           <text wx:if="{{editPaletteDropdownOpen}}" class="edit-dropdown-state">收起</text>
-          <text wx:else class="edit-dropdown-state">搜索</text>
+          <text wx:else class="edit-dropdown-state">展开</text>
         </button>
         <view wx:if="{{editPaletteDropdownOpen}}" class="edit-dropdown-list">
           <input class="edit-search" placeholder="搜索色号或名称" value="{{editSearchQuery}}" bindinput="onEditSearchInput" />
@@ -399,11 +448,10 @@
               size="mini"
               class="edit-search-row"
               data-code="{{item.code}}"
-              bindtap="selectActiveEditColor"
+              bindtap="{{replaceTargetCode ? 'confirmReplaceColor' : 'selectActiveEditColor'}}"
             >
               <view class="edit-swatch" style="background: rgb({{item.rgb[0]}}, {{item.rgb[1]}}, {{item.rgb[2]}});"></view>
               <text class="edit-search-code">{{item.code}}</text>
-              <text class="edit-search-name">{{item.name}}</text>
             </button>
           </scroll-view>
         </view>
@@ -411,4 +459,8 @@
     </view>
   </view>
 </view>
+
+
+
+
 

@@ -1,0 +1,116 @@
+.ai-access-page {
+  min-height: 100vh;
+  padding: 28rpx;
+  box-sizing: border-box;
+  background: #f5f7fb;
+  color: #172033;
+}
+
+.access-summary,
+.redeem-panel,
+.detail-panel {
+  background: #ffffff;
+  border: 1rpx solid #dbe3ef;
+  border-radius: 12rpx;
+  padding: 28rpx;
+  box-sizing: border-box;
+  box-shadow: 0 10rpx 28rpx rgba(15, 23, 42, 0.06);
+}
+
+.summary-kicker,
+.redeem-title {
+  display: block;
+  color: #64748b;
+  font-size: 24rpx;
+  font-weight: 600;
+}
+
+.summary-title {
+  display: block;
+  margin-top: 12rpx;
+  font-size: 42rpx;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.summary-desc {
+  display: block;
+  margin-top: 12rpx;
+  color: #64748b;
+  font-size: 26rpx;
+  line-height: 1.6;
+}
+
+.redeem-panel,
+.detail-panel {
+  margin-top: 28rpx;
+}
+
+.redeem-column,
+.action-row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 16rpx;
+  margin-top: 18rpx;
+}
+
+.action-row {
+  flex-direction: row;
+  align-items: center;
+}
+
+.redeem-input {
+  width: 100%;
+  height: 76rpx;
+  padding: 0 20rpx;
+  border-radius: 10rpx;
+  border: 1rpx solid #cbd5e1;
+  background: #f8fafc;
+  box-sizing: border-box;
+  color: #0f172a;
+  font-size: 26rpx;
+}
+
+.redeem-button,
+.secondary-button,
+.admin-link {
+  height: 76rpx;
+  line-height: 76rpx;
+  border-radius: 10rpx;
+  font-size: 26rpx;
+}
+
+.redeem-button {
+  width: 100%;
+  background: #172033;
+  color: #ffffff;
+}
+
+.saved-code {
+  display: block;
+  margin-top: 16rpx;
+  color: #475569;
+  font-size: 24rpx;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.secondary-button {
+  flex: 1;
+  background: #e2e8f0;
+  color: #172033;
+}
+
+.detail-line {
+  display: block;
+  color: #334155;
+  font-size: 26rpx;
+  line-height: 1.7;
+}
+
+.admin-link {
+  margin-top: 32rpx;
+  background: transparent;
+  color: #2563eb;
+}

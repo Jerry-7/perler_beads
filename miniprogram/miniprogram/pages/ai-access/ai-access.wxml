@@ -1,0 +1,35 @@
+<view class="ai-access-page">
+  <view class="access-summary">
+    <text class="summary-kicker">AI 权限码</text>
+    <text class="summary-title">{{accessText}}</text>
+    <text class="summary-desc">AI 生图成功后才会扣除 1 次额度，失败不会扣次。</text>
+  </view>
+
+  <view class="redeem-panel">
+    <text class="redeem-title">权限码</text>
+    <view class="redeem-column">
+      <input
+        class="redeem-input"
+        type="text"
+        placeholder="AI-XXXXXXXXXXXX"
+        value="{{accessCodeDraft}}"
+        confirm-type="done"
+        bindinput="onAccessCodeInput"
+      />
+      <button class="redeem-button" loading="{{isLoading}}" bindtap="saveAndRefresh">保存</button>
+    </view>
+    <text class="saved-code" wx:if="{{hasSavedCode}}">当前权限码：{{accessCode}}</text>
+    <view class="action-row">
+      <button class="secondary-button" loading="{{isLoading}}" bindtap="pasteAccessCode">粘贴</button>
+      <button class="secondary-button" loading="{{isLoading}}" bindtap="refreshAccess">刷新</button>
+      <button class="secondary-button" wx:if="{{hasSavedCode}}" bindtap="clearSavedCode">清除</button>
+    </view>
+  </view>
+
+  <view class="detail-panel" wx:if="{{status}}">
+    <text class="detail-line">状态：{{status}}</text>
+    <text class="detail-line">次数：剩余 {{remainingUses}} / 总计 {{totalUses}}</text>
+  </view>
+
+  <button class="admin-link" bindtap="openAdminPage">管理员入口</button>
+</view>

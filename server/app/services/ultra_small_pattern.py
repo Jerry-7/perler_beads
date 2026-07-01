@@ -52,7 +52,6 @@ def process_ultra_small_bead_pattern(
         widthCells=target_width,
         heightCells=target_height,
         paletteVersion=PALETTE_VERSION,
-        cells=rows,
         usage=usage,
         generatedAt=datetime.now(UTC).isoformat(),
         rleRows=rle_rows,

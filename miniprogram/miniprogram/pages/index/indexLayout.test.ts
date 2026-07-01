@@ -83,7 +83,7 @@ test("pattern panel owns upload recommendation and pattern controls", () => {
   const recommendedColors = wxml.indexOf("recommendedColors", panelStart);
   const applyRecommended = wxml.indexOf("applyRecommendedPatternSize", panelStart);
   const sizeWarning = wxml.indexOf("patternSizeWarning", panelStart);
-  const maxColors = wxml.indexOf("onPatternMaxColorsInput", panelStart);
+  const maxColors = wxml.indexOf("onPatternMaxColorsChange", panelStart);
   const sampling = wxml.indexOf("onSamplingModeChange", panelStart);
 
   assert(panelStart >= 0, "missing pattern generation panel");
@@ -213,13 +213,13 @@ test("selecting an edit color does not automatically dim the pattern", () => {
 });
 
 
-test("editor cell actions allow raw color cells to be repainted", () => {
+test("editor cell actions allow raw color cells and empty cells to be repainted", () => {
   const methodStart = pageTs.indexOf("handleEditorCellAction(row");
   const methodEnd = pageTs.indexOf("paintEditorCell(row", methodStart);
   const methodBody = pageTs.slice(methodStart, methodEnd);
 
   assert(methodStart >= 0, "missing handleEditorCellAction method");
-  assert(methodBody.includes("if (!cell || isEmptyCell(cell))"), "editor should reject only empty cells before repainting");
+  assert(!methodBody.includes("if (!cell || isEmptyCell(cell))"), "editor should allow painting empty cells");
   assert(!methodBody.includes("if (!cell || !isBeadCell(cell))"), "editor should not block raw color cells before repainting");
 });
 
@@ -329,7 +329,7 @@ test("editor commits avoid sending full pattern data through setData", () => {
   assert(!setDataBody.includes("result: nextResult"), "commit should not send full pattern result through setData");
   assert(!setDataBody.includes("editorUndoStack:"), "commit should not send full undo stack through setData");
   assert(setDataBody.includes("editorUndoCount"), "commit should expose only undo count to WXML");
-  assert(pageTs.includes("pushEditorHistory"), "page should use the shared editor history abstraction");
+  assert(pageTs.includes("pushEditorPatchHistory"), "page should use the shared editor patch history abstraction");
   assert(!pageTs.includes("editorUndoStackCache"), "page should not keep a handwritten undo stack");
   assert(!pageTs.includes("editorRedoStackCache"), "page should not keep a handwritten redo stack");
 });
@@ -394,4 +394,25 @@ test("exported pattern image draws prominent five-cell grid lines", () => {
   assert(pageTs.includes("col += 5"), "vertical group grid lines should use a step of five cells");
   assert(pageTs.includes("row += 5"), "horizontal group grid lines should use a step of five cells");
   assert(pageTs.includes("#ff2f92"), "group grid line color should be visually distinct");
+});
+
+test("PC devtools export downloads and saves to local persistent storage", () => {
+  const exportStart = pageTs.indexOf("exportPng()");
+  const exportEnd = pageTs.indexOf("  isDevtoolsTempPath", exportStart);
+  const exportBody = pageTs.slice(exportStart, exportEnd);
+
+  assert(exportStart >= 0, "missing exportPng method");
+  assert(exportBody.includes("showDevtoolsExportMenu"), "devtools temp path should use the PC export menu");
+  assert(pageTs.includes("wx.downloadFile"), "PC export should download http temp file first");
+  assert(pageTs.includes("wx.getFileSystemManager"), "PC export should use file system to save");
+  assert(pageTs.includes("wx.previewImage"), "PC export should preview saved image");
+});
+test("AI image devtools temp path previews instead of using pattern export menu", () => {
+  const aiSaveStart = pageTs.indexOf("async saveAiTempImageToAlbum");
+  const aiSaveEnd = pageTs.indexOf("exportPng()", aiSaveStart);
+  const aiSaveBody = pageTs.slice(aiSaveStart, aiSaveEnd);
+
+  assert(aiSaveStart >= 0, "missing AI temp image save method");
+  assert(aiSaveBody.includes("wx.previewImage"), "AI devtools temp image should open preview");
+  assert(!aiSaveBody.includes("showDevtoolsExportMenu"), "AI image save should not use pattern export menu");
 });

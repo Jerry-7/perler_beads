@@ -228,7 +228,7 @@ def test_grid_scan_reconstructs_grid_lines_hidden_by_large_artwork() -> None:
     assert result.cells[10][14].beadCode in {"BLACK", "GREEN"}
     assert getattr(result.cells[0][0], "empty", False) is True
 
-def test_grid_scan_ignores_size_hint_when_it_conflicts_with_detected_period() -> None:
+def test_grid_scan_forces_target_size_when_it_conflicts_with_detected_period() -> None:
     palette = [
         PaletteColor(code="BLACK", name="Black", rgb=(0, 0, 0)),
         PaletteColor(code="GREEN", name="Green", rgb=(0, 190, 60)),
@@ -242,8 +242,8 @@ def test_grid_scan_ignores_size_hint_when_it_conflicts_with_detected_period() ->
         target_height=52,
     )
 
-    assert result.widthCells == 78
-    assert result.heightCells == 78
+    assert result.widthCells == 52
+    assert result.heightCells == 52
 
 def test_grid_scan_uses_dominant_center_color_instead_of_blending_colors() -> None:
     palette = [

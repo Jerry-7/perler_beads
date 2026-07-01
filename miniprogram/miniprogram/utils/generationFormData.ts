@@ -13,6 +13,8 @@ export interface GenerationFormDataInput {
   colorComplexity: ColorComplexity;
   samplingMode: SamplingMode;
   aiMaxColors: number;
+  clusterQuantile?: number;
+  clusterEps?: number;
 }
 
 export interface AiImageFormDataInput {
@@ -22,6 +24,7 @@ export interface AiImageFormDataInput {
   aiStyle: AiStyle;
   aiEffect3d: AiEffect3d;
   aiShading: AiShading;
+  accessCode: string;
 }
 
 export function buildGenerationFormData(input: GenerationFormDataInput): Record<string, string> {
@@ -36,6 +39,12 @@ export function buildGenerationFormData(input: GenerationFormDataInput): Record<
   if (input.aiImageId) {
     formData.aiImageId = input.aiImageId;
   }
+  if (typeof input.clusterQuantile === "number") {
+    formData.clusterQuantile = String(input.clusterQuantile);
+  }
+  if (typeof input.clusterEps === "number") {
+    formData.clusterEps = String(input.clusterEps);
+  }
   return formData;
 }
 
@@ -46,6 +55,7 @@ export function buildAiImageFormData(input: AiImageFormDataInput): Record<string
     aiDetail: input.aiDetail,
     aiStyle: input.aiStyle,
     aiEffect3d: input.aiEffect3d,
-    aiShading: input.aiShading
+    aiShading: input.aiShading,
+    accessCode: input.accessCode
   };
 }

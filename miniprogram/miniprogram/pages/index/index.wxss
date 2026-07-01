@@ -225,6 +225,40 @@
   background: #ffd9a6;
 }
 
+
+.heading-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 10rpx;
+}
+
+.ai-access-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14rpx;
+  padding: 14rpx 16rpx;
+  border: 3rpx solid #333333;
+  border-radius: 8rpx;
+  background: #eef6ff;
+  box-sizing: border-box;
+  font-size: 24rpx;
+  font-weight: 800;
+  color: #1f2937;
+}
+
+.ai-access-link {
+  flex-shrink: 0;
+  min-height: 52rpx;
+  margin: 0;
+  padding: 0 14rpx;
+  border: 3rpx solid #333333;
+  border-radius: 8rpx;
+  background: #ffe56b;
+  font-size: 22rpx;
+  font-weight: 900;
+}
 .control-panel {
   display: flex;
   flex-direction: column;
@@ -242,6 +276,14 @@
   font-size: 25rpx;
   font-weight: 800;
   color: #333333;
+}
+
+.field-hint {
+  display: block;
+  font-size: 20rpx;
+  color: #94a3b8;
+  margin-top: 4rpx;
+  margin-bottom: 8rpx;
 }
 
 .form-grid {
@@ -702,7 +744,7 @@
 
 .editor-color-panel {
   display: flex;
-  max-height: 34vh;
+  max-height: 42vh;
   flex-direction: column;
   gap: 10rpx;
   padding: 14rpx;
@@ -779,9 +821,22 @@
   color: #1f2937;
 }
 
-.edit-candidate-section,
-.edit-palette-dropdown {
+.edit-candidate-section {
   min-width: 0;
+  padding: 10rpx;
+  border: 3rpx solid #333333;
+  border-radius: 8rpx;
+  background: #f8fafc;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+
+.edit-palette-dropdown {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
   padding: 10rpx;
   border: 3rpx solid #333333;
   border-radius: 8rpx;
@@ -862,6 +917,36 @@
   color: #64748b;
 }
 
+.edit-replace-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+  padding: 8rpx 14rpx;
+  border-radius: 8rpx;
+  background: #fef3c7;
+  font-size: 20rpx;
+  font-weight: 800;
+  color: #92400e;
+}
+
+.edit-replace-cancel {
+  flex-shrink: 0;
+  padding: 6rpx 16rpx;
+  border: 2rpx solid #92400e;
+  border-radius: 8rpx;
+  background: transparent;
+  font-size: 18rpx;
+  font-weight: 800;
+  color: #92400e;
+  line-height: 1;
+}
+
+.edit-candidate-chip.replace-target {
+  border-color: #f59e0b;
+  background: #fffbeb;
+}
+
 .edit-candidate-focus {
   margin-top: 2rpx;
   padding: 2rpx 8rpx;
@@ -895,11 +980,20 @@
   font-size: 19rpx;
 }
 
+.edit-palette-dropdown {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .edit-dropdown-list {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 8rpx;
   margin-top: 8rpx;
+  min-height: 0;
 }
 
 .edit-search {
@@ -911,29 +1005,29 @@
   font-size: 20rpx;
   font-weight: 700;
   background: #ffffff;
+  flex-shrink: 0;
 }
 
 .edit-search-list {
-  display: flex;
-  max-height: 190rpx;
-  flex-direction: column;
-  gap: 8rpx;
-  overflow: auto;
+  flex: 1;
+  min-height: 80rpx;
+  overflow-y: auto;
+  padding-right: 4rpx;
 }
 
 .edit-search-row {
   display: flex;
   min-width: 0;
-  min-height: 54rpx;
+  min-height: 48rpx;
   align-items: center;
   justify-content: flex-start;
   gap: 8rpx;
   margin: 0;
-  padding: 0 10rpx;
+  padding: 0 8rpx;
   border: 3rpx solid #333333;
   border-radius: 8rpx;
   background: #ffffff;
-  font-size: 20rpx;
+  font-size: 18rpx;
   font-weight: 800;
   line-height: 1;
 }
@@ -941,6 +1035,7 @@
 .edit-search-code {
   flex-shrink: 0;
   font-weight: 900;
+  font-size: 18rpx;
 }
 
 .edit-search-name {

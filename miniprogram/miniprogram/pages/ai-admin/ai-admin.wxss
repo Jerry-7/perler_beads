@@ -1,0 +1,163 @@
+.admin-page {
+  min-height: 100vh;
+  padding: 28rpx;
+  box-sizing: border-box;
+  background: #f5f7fb;
+  color: #172033;
+}
+
+.panel {
+  margin-bottom: 24rpx;
+  padding: 28rpx;
+  border: 1rpx solid #dbe3ef;
+  border-radius: 12rpx;
+  background: #ffffff;
+  box-sizing: border-box;
+  box-shadow: 0 10rpx 28rpx rgba(15, 23, 42, 0.06);
+}
+
+.panel-kicker,
+.field-label,
+.key-meta {
+  display: block;
+  color: #64748b;
+  font-size: 24rpx;
+  font-weight: 600;
+}
+
+.panel-title {
+  display: block;
+  margin-top: 12rpx;
+  color: #0f172a;
+  font-size: 40rpx;
+  font-weight: 800;
+}
+
+.field {
+  display: block;
+  margin-bottom: 20rpx;
+}
+
+.admin-session {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  margin-bottom: 22rpx;
+  padding-bottom: 20rpx;
+  border-bottom: 1rpx solid #e2e8f0;
+}
+
+.session-text {
+  min-width: 0;
+  flex: 1;
+  color: #475569;
+  font-size: 24rpx;
+  line-height: 1.45;
+}
+
+.field-input {
+  width: 100%;
+  height: 76rpx;
+  margin-top: 10rpx;
+  padding: 0 20rpx;
+  border: 1rpx solid #cbd5e1;
+  border-radius: 10rpx;
+  background: #f8fafc;
+  box-sizing: border-box;
+  font-size: 26rpx;
+}
+
+.field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16rpx;
+}
+
+.segmented-control {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10rpx;
+  margin-top: 10rpx;
+  padding: 6rpx;
+  border-radius: 10rpx;
+  background: #e2e8f0;
+}
+
+.segment {
+  height: 68rpx;
+  line-height: 68rpx;
+  border-radius: 8rpx;
+  background: transparent;
+  color: #475569;
+  font-size: 26rpx;
+}
+
+.segment.active {
+  background: #ffffff;
+  color: #172033;
+  font-weight: 700;
+}
+
+.picker-field {
+  height: 76rpx;
+  line-height: 76rpx;
+  margin-top: 10rpx;
+  padding: 0 20rpx;
+  border: 1rpx solid #cbd5e1;
+  border-radius: 10rpx;
+  background: #f8fafc;
+  box-sizing: border-box;
+  font-size: 26rpx;
+}
+
+.primary-button {
+  height: 80rpx;
+  line-height: 80rpx;
+  border-radius: 10rpx;
+  background: #172033;
+  color: #ffffff;
+  font-size: 28rpx;
+}
+
+.secondary-button {
+  width: 148rpx;
+  height: 58rpx;
+  line-height: 58rpx;
+  border-radius: 8rpx;
+  background: #e2e8f0;
+  color: #172033;
+  font-size: 24rpx;
+}
+
+.key-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  padding: 18rpx 0;
+  border-bottom: 1rpx solid #e2e8f0;
+}
+
+.key-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.key-code {
+  display: block;
+  color: #0f172a;
+  font-size: 28rpx;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.copy-button {
+  width: 108rpx;
+  height: 60rpx;
+  line-height: 60rpx;
+  border-radius: 8rpx;
+  background: #172033;
+  color: #ffffff;
+  font-size: 24rpx;
+}

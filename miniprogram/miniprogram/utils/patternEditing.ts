@@ -135,13 +135,54 @@ function updateUsageForReplacement(usage: BeadUsage[], oldCell: PatternCell, nex
   return Object.values(usageMap).sort((left, right) => left.beadCode.localeCompare(right.beadCode));
 }
 
+export interface UsageChange {
+  beforeCell: PatternCell;
+  afterCell: PatternCell;
+}
+
+/**
+ * 增量更新 usage —— 基于 patch changes 中的 beforeCell/afterCell，
+ * 避免 recalculateUsage 的全量 O(n×m) 遍历。
+ * 适用于批量编辑操作（单点、连涂、填充、撤销、重做）。
+ */
+export function applyUsagePatch(usage: BeadUsage[], changes: UsageChange[]): BeadUsage[] {
+  const usageMap: Record<string, BeadUsage> = {};
+  for (const item of usage) {
+    usageMap[item.beadCode] = { ...item, beadRgb: [...item.beadRgb] as Rgb };
+  }
+
+  for (const { beforeCell, afterCell } of changes) {
+    // 扣除旧颜色
+    if (isBeadCell(beforeCell) && usageMap[beforeCell.beadCode]) {
+      usageMap[beforeCell.beadCode].count -= 1;
+      if (usageMap[beforeCell.beadCode].count <= 0) {
+        delete usageMap[beforeCell.beadCode];
+      }
+    }
+    // 增加新颜色
+    if (isBeadCell(afterCell)) {
+      if (!usageMap[afterCell.beadCode]) {
+        usageMap[afterCell.beadCode] = {
+          beadCode: afterCell.beadCode,
+          beadName: afterCell.beadName,
+          beadRgb: afterCell.beadRgb,
+          count: 0,
+        };
+      }
+      usageMap[afterCell.beadCode].count += 1;
+    }
+  }
+
+  return Object.values(usageMap).sort((left, right) => left.beadCode.localeCompare(right.beadCode));
+}
+
 export function filterPaletteColors(colors: PaletteColor[], query: string, limit = 12): PaletteColor[] {
   const normalizedQuery = query.trim().toLowerCase();
+  const enabled = colors.filter((color) => color.enabled);
   if (!normalizedQuery) {
-    return [];
+    return enabled.slice(0, limit);
   }
-  return colors
-    .filter((color) => color.enabled)
+  return enabled
     .filter((color) => color.code.toLowerCase().includes(normalizedQuery) || color.name.toLowerCase().includes(normalizedQuery))
     .slice(0, limit);
 }
@@ -189,4 +230,60 @@ function replaceBeadLikeCell(cell: Exclude<PatternCell, { empty: true }>, palett
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+/**
+ * 从 RLE 字符串和 usage 表重建 cells 二维矩阵。
+ * RLE 格式：每行 "CODE:COUNT,CODE:COUNT,..."，CODE="EMPTY" 表示空格子。
+ * usage 提供色号 → beadRgb / beadName 的映射。
+ * sourceRgb 和 distance 在编辑后已无实际意义，使用珠子自身 RGB 填充。
+ */
+export function decodeRleRows(
+  rleRows: string[],
+  widthCells: number,
+  heightCells: number,
+  usageMap: Map<string, BeadUsage>
+): PatternCell[][] {
+  const cells: PatternCell[][] = [];
+
+  for (let row = 0; row < heightCells; row++) {
+    const rowCells: PatternCell[] = [];
+    const rle = rleRows[row];
+
+    if (!rle) {
+      // 空行全部填 EMPTY
+      for (let col = 0; col < widthCells; col++) {
+        rowCells.push({ x: col, y: row, empty: true });
+      }
+    } else {
+      let col = 0;
+      for (const run of rle.split(",")) {
+        const sepIndex = run.lastIndexOf(":");
+        if (sepIndex < 0) continue;
+        const code = run.slice(0, sepIndex);
+        const count = Number(run.slice(sepIndex + 1));
+        if (code === "EMPTY" || !Number.isFinite(count)) {
+          for (let i = 0; i < (Number.isFinite(count) ? count : 0); i++, col++) {
+            rowCells.push({ x: col, y: row, empty: true });
+          }
+        } else {
+          const beadInfo = usageMap.get(code);
+          for (let i = 0; i < count; i++, col++) {
+            rowCells.push({
+              x: col,
+              y: row,
+              sourceRgb: beadInfo?.beadRgb ?? [0, 0, 0],
+              beadCode: code,
+              beadName: beadInfo?.beadName ?? code,
+              beadRgb: beadInfo?.beadRgb ?? [0, 0, 0],
+              distance: 0,
+            });
+          }
+        }
+      }
+    }
+    cells.push(rowCells);
+  }
+
+  return cells;
 }

@@ -148,7 +148,7 @@ test("filterPaletteColors matches bead code and bead name", () => {
 
   assertEqual(filterPaletteColors(colors, "s02")[0].code, "S02", "code search");
   assertEqual(filterPaletteColors(colors, "red")[0].code, "S03", "name search");
-  assertEqual(filterPaletteColors(colors, "").length, 0, "empty query");
+  assertEqual(filterPaletteColors(colors, "").length, 3, "empty query returns all enabled");
 });
 
 test("getEditPopoverPosition keeps popover inside canvas bounds", () => {

@@ -96,3 +96,11 @@ def test_ai_settings_read_optional_image_edit_fields(monkeypatch: pytest.MonkeyP
     assert settings.ai_image_output_format == "webp"
     assert settings.ai_image_output_compression == 80
     assert settings.ai_image_moderation == "low"
+
+
+def test_settings_read_wechat_pay_platform_cert_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("WECHAT_PAY_PLATFORM_CERT_PATH", "./certs/platform.pem")
+
+    settings = load_settings()
+
+    assert settings.wechat_pay_platform_cert_path == "./certs/platform.pem"

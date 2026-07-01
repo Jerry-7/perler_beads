@@ -1,0 +1,66 @@
+<view class="admin-page">
+  <view class="panel">
+    <text class="panel-kicker">管理员</text>
+    <text class="panel-title">创建 AI 权限码</text>
+  </view>
+
+  <view class="panel" wx:if="{{!isLoggedIn}}">
+    <label class="field">
+      <text class="field-label">管理员账号</text>
+      <input class="field-input" value="{{username}}" bindinput="onUsernameInput" />
+    </label>
+    <label class="field">
+      <text class="field-label">管理员密码</text>
+      <input class="field-input" password value="{{password}}" bindinput="onPasswordInput" />
+    </label>
+    <button class="primary-button" loading="{{isLoggingIn}}" bindtap="login">登录</button>
+  </view>
+
+  <view class="panel" wx:else>
+    <view class="admin-session">
+      <text class="session-text">当前已登录{{adminTokenExpiresAt ? "，有效至 " + adminTokenExpiresAt : ""}}</text>
+      <button class="secondary-button" size="mini" bindtap="logout">重新登录</button>
+    </view>
+    <label class="field">
+      <text class="field-label">生成数量</text>
+      <input class="field-input" type="number" value="{{count}}" bindinput="onCountInput" />
+    </label>
+    <label class="field">
+      <text class="field-label">每个码可用次数</text>
+      <input class="field-input" type="number" value="{{usesPerCode}}" bindinput="onUsesInput" />
+    </label>
+    <view class="field">
+      <text class="field-label">有效期</text>
+      <view class="segmented-control">
+        <button class="segment {{expiresMode === 'never' ? 'active' : ''}}" bindtap="selectNeverExpires">无限期</button>
+        <button class="segment {{expiresMode === 'limited' ? 'active' : ''}}" bindtap="selectLimitedExpires">限时</button>
+      </view>
+    </view>
+    <view class="field-grid" wx:if="{{expiresMode === 'limited'}}">
+      <label class="field">
+        <text class="field-label">日期</text>
+        <picker mode="date" value="{{expiresDate}}" bindchange="onExpiresDateChange">
+          <view class="picker-field">{{expiresDate}}</view>
+        </picker>
+      </label>
+      <label class="field">
+        <text class="field-label">时间</text>
+        <picker mode="time" value="{{expiresTime}}" bindchange="onExpiresTimeChange">
+          <view class="picker-field">{{expiresTime}}</view>
+        </picker>
+      </label>
+    </view>
+    <button class="primary-button" loading="{{isCreating}}" bindtap="createKeys">创建权限码</button>
+  </view>
+
+  <view class="panel" wx:if="{{createdKeys.length}}">
+    <text class="panel-kicker">已创建权限码</text>
+    <view class="key-row" wx:for="{{createdKeys}}" wx:key="code">
+      <view class="key-main">
+        <text class="key-code">{{item.code}}</text>
+        <text class="key-meta">{{item.totalUses}} 次</text>
+      </view>
+      <button class="copy-button" size="mini" data-code="{{item.code}}" bindtap="copyKey">复制</button>
+    </view>
+  </view>
+</view>

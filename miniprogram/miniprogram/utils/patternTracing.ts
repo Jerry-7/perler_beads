@@ -18,7 +18,7 @@ export interface TraceCellPosition {
   key: string;
 }
 
-// 统一鼠标/触摸事件的字段，兼容 detail（自定义事件）和 touches/changedTouches
+// 统一鼠标/触摸事件的字段，兼容 detail（自定义事件）和 touches/changedTouches（从TouchEvent事件中提取了关键属性） 
 export interface CanvasPointEvent {
   detail?: {
     x?: number;

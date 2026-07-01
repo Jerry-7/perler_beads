@@ -42,6 +42,8 @@ class GenerationStore:
         color_complexity: ColorSimplificationProfile = ColorSimplificationProfile.BALANCED,
         sampling_mode: str = "dominant",
         max_colors: int = 16,
+        cluster_quantile: float = 0.2,
+        cluster_eps: float = 30.0,
     ) -> Generation:
         generation = Generation(id=uuid4().hex, status="processing")
         self._items[generation.id] = generation
@@ -56,6 +58,8 @@ class GenerationStore:
                 color_complexity,
                 sampling_mode,
                 max_colors,
+                cluster_quantile,
+                cluster_eps,
             )
             generation.status = "completed"
         except (PaletteEmptyError, PixelArtProviderError, UltraSmallPatternError, LineArtPatternError, GridScanPatternError) as exc:
@@ -78,6 +82,8 @@ class GenerationStore:
         color_complexity: ColorSimplificationProfile,
         sampling_mode: str,
         max_colors: int,
+        cluster_quantile: float = 0.2,
+        cluster_eps: float = 30.0,
     ) -> PatternResult:
         if sampling_mode == "grid-scan":
             return process_grid_scan_bead_pattern(
@@ -85,6 +91,26 @@ class GenerationStore:
                 bead_palette=palette,
                 target_width=width_cells,
                 target_height=height_cells,
+            )
+        if sampling_mode == "cluster-ms":
+            from app.services.cluster_pattern import process_cluster_ms_bead_pattern
+
+            return process_cluster_ms_bead_pattern(
+                image_bytes=image_bytes,
+                bead_palette=palette,
+                target_width=width_cells,
+                target_height=height_cells,
+                quantile=cluster_quantile,
+            )
+        if sampling_mode == "cluster-dbscan":
+            from app.services.cluster_pattern import process_cluster_dbscan_bead_pattern
+
+            return process_cluster_dbscan_bead_pattern(
+                image_bytes=image_bytes,
+                bead_palette=palette,
+                target_width=width_cells,
+                target_height=height_cells,
+                eps=cluster_eps,
             )
         if sampling_mode == "ultra-small":
             return process_ultra_small_bead_pattern(
@@ -158,7 +184,6 @@ class GenerationStore:
             widthCells=width_cells,
             heightCells=height_cells,
             paletteVersion=PALETTE_VERSION,
-            cells=rows,
             usage=usage,
             generatedAt=datetime.now(UTC).isoformat(),
             rleRows=rle_rows,

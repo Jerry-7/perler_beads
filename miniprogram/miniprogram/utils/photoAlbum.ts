@@ -6,11 +6,6 @@ export interface PhotoAlbumApi {
     success?: (result: unknown) => void;
     fail?: (error: { errMsg?: string }) => void;
   }): void;
-  authorize(options: {
-    scope: "scope.writePhotosAlbum";
-    success?: (result: unknown) => void;
-    fail?: (error: { errMsg?: string }) => void;
-  }): void;
   openSetting(options: { success?: (result: unknown) => void; fail?: (error: { errMsg?: string }) => void }): void;
 }
 
@@ -31,16 +26,6 @@ function saveOnce(api: PhotoAlbumApi, filePath: string): Promise<SaveAttemptResu
   });
 }
 
-function authorizeAlbum(api: PhotoAlbumApi): Promise<boolean> {
-  return new Promise((resolve) => {
-    api.authorize({
-      scope: "scope.writePhotosAlbum",
-      success: () => resolve(true),
-      fail: () => resolve(false)
-    });
-  });
-}
-
 function openAlbumSettings(api: PhotoAlbumApi): Promise<void> {
   return new Promise((resolve) => {
     api.openSetting({
@@ -50,21 +35,30 @@ function openAlbumSettings(api: PhotoAlbumApi): Promise<void> {
   });
 }
 
+/**
+ * 保存图片到相册，自动处理权限。
+ *
+ * 流程：
+ * 1. 直接调用 saveImageToPhotosAlbum（首次调用会触发系统授权弹窗）
+ * 2. 如果权限被拒绝，打开设置页让用户手动开启
+ * 3. 返回 "needs-settings" 表示用户需要从设置页返回后重试
+ *
+ * 注意：不再使用 wx.authorize，因为 scope.writePhotosAlbum 的
+ * authorize 接口在部分微信版本上不可靠（返回成功但权限未生效）。
+ */
 export async function saveImageWithAlbumPermission(
   api: PhotoAlbumApi,
   filePath: string
 ): Promise<SaveImageResult> {
   const firstAttempt = await saveOnce(api, filePath);
-  if (firstAttempt === "saved" || firstAttempt === "failed") {
-    return firstAttempt;
+  if (firstAttempt === "saved") {
+    return "saved";
+  }
+  if (firstAttempt === "failed") {
+    return "failed";
   }
 
-  const authorized = await authorizeAlbum(api);
-  if (!authorized) {
-    await openAlbumSettings(api);
-    return "needs-settings";
-  }
-
-  const retryAttempt = await saveOnce(api, filePath);
-  return retryAttempt === "saved" ? "saved" : "failed";
+  // 权限被拒绝：打开设置页，让用户手动开启后重试
+  await openAlbumSettings(api);
+  return "needs-settings";
 }

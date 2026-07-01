@@ -23,7 +23,8 @@ test("AI image form data includes AI prompt controls", () => {
     aiDetail: "detailed",
     aiStyle: "crafted",
     aiEffect3d: "strong",
-    aiShading: "dithered"
+    aiShading: "dithered",
+    accessCode: "AI-TEST"
   });
 
   assertEqual(formData.widthCells, "52", "width");
@@ -32,6 +33,7 @@ test("AI image form data includes AI prompt controls", () => {
   assertEqual(formData.aiStyle, "crafted", "ai style");
   assertEqual(formData.aiEffect3d, "strong", "ai effect");
   assertEqual(formData.aiShading, "dithered", "ai shading");
+  assertEqual(formData.accessCode, "AI-TEST", "access code");
   assertEqual("aiMaxColors" in formData, false, "AI image should not send color count");
 });
 
