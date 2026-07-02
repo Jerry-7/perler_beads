@@ -1,4 +1,4 @@
-<view class="maker-page">
+﻿<view class="maker-page">
   <!-- <view class="container">
     <view class="card">
       <text class="title">完善个人资料</text>
@@ -277,7 +277,7 @@
           <text wx:else>修改图纸</text>
         </button>
         <button size="mini" bindtap="previewPattern">预览</button>
-        <button size="mini" bindtap="exportPng">保存</button>
+        <button size="mini" bindtap="exportImage">保存</button>
       </view>
     </view>
     <view wx:if="{{isTracingMode}}" class="tracing-bar">

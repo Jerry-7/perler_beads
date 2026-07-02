@@ -141,7 +141,9 @@ export function uploadGeneration(input: UploadGenerationInput): Promise<Generati
     sourceMode: input.sourceMode || "resample",
     colorComplexity: input.colorComplexity || "balanced",
     samplingMode: input.samplingMode || "nearest",
-    aiMaxColors: input.aiMaxColors || 16
+    aiMaxColors: input.aiMaxColors || 16,
+    clusterQuantile: input.clusterQuantile,
+    clusterEps: input.clusterEps,
   });
   if (input.aiImageId) {
     return request<GenerationStatus>({

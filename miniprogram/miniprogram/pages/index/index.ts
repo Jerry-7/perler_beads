@@ -187,7 +187,7 @@ Page({
     // 当前选定的画笔颜色及其描述
     activeEditColor: null as PaletteColor | null,
     activeEditColorText: "选择颜色",
-    
+
     highlightedBeadCode: "",
     replaceTargetCode: "",
     candidateScrollInto: "",
@@ -932,7 +932,7 @@ Page({
     };
 
     const candidateUsage = usage || this.data.usage;
-    for (const item of candidateUsage.slice(0, 18)) {
+    for (const item of candidateUsage) {
       addCandidate({
         code: item.beadCode,
         name: item.beadName,
@@ -948,15 +948,17 @@ Page({
         this.data.paletteColors.find((color) => color.code === currentCode) ||
         this.data.activeEditColor ||
         this.data.editCandidateColors.find((color) => color.code === currentCode);
-      if (currentPaletteColor) {
+      if (currentPaletteColor && !byCode[currentPaletteColor.code]) {
+        const currentUsage = candidateUsage.find((item) => item.beadCode === currentPaletteColor.code);
         addCandidate({
           ...currentPaletteColor,
-          countLabel: "新颜色"
+          count: currentUsage?.count,
+          countLabel: currentUsage ? String(currentUsage.count) : "新颜色"
         });
       }
     }
 
-    return Object.values(byCode).slice(0, 18);
+    return Object.values(byCode);
   },
   closeEditPopover() {
     this.setData({
@@ -1092,11 +1094,11 @@ Page({
       this.data.paletteColors.find((color) => color.code === code) ||
       (usageColor
         ? {
-            code: usageColor.beadCode,
-            name: usageColor.beadName,
-            rgb: usageColor.beadRgb,
-            enabled: true
-          }
+          code: usageColor.beadCode,
+          name: usageColor.beadName,
+          rgb: usageColor.beadRgb,
+          enabled: true
+        }
         : null)
     );
   },
@@ -2417,7 +2419,7 @@ Page({
   },
 
   async saveAiTempImageToAlbum(tempFilePath: string, previewUrl: string) {
-    if (this.isDevtoolsTempPath(tempFilePath)) {
+    if (this.isDevtools()) {
       console.warn("[ai-image-export] devtools temp path cannot be saved to album", { tempFilePath, previewUrl });
       wx.previewImage({ current: previewUrl, urls: [previewUrl] });
       wx.showToast({ title: "PC 调试请在预览中保存，真机可保存到相册", icon: "none" });
@@ -2434,7 +2436,7 @@ Page({
         wx.showToast({ title: "导出失败", icon: "none" });
         return;
       }
-      if (this.isDevtoolsTempPath(tempFilePath)) {
+      if (this.isDevtools()) {
         console.warn("[pattern-export] devtools temp path uses share image menu", { tempFilePath });
         this.showDevtoolsExportMenu(tempFilePath);
         return;
@@ -2442,10 +2444,300 @@ Page({
       await this.saveTempImageToAlbum(tempFilePath);
     });
   },
-
-  isDevtoolsTempPath(path: string) {
-    return path.startsWith("http://tmp/") || path.startsWith("http://127.0.0.1") || path.startsWith("https://tmp/");
+  isPCEnvironment(): boolean {
+    const sys = wx.getSystemInfoSync();
+    // devtools 一定是 PC；windows/mac 为 PC 微信
+    return sys.platform === 'windows' || sys.platform === 'mac';
   },
+
+  isDevtools(): boolean {
+    try {
+      const sys = wx.getSystemInfoSync();
+      return sys.platform === 'devtools';
+    } catch {
+      return false;
+    }
+  },
+
+  async convertHttpTmpToLocal(tempFilePath: string): Promise<string> {
+    console.log("convertHttpTmpToLocal - tempFilePath:", tempFilePath)
+    // 已是有效本地路径，直接返回
+    if (tempFilePath.startsWith('wxfile://') || tempFilePath.startsWith('file://')) {
+      return tempFilePath;
+    }
+
+    // 如果不是 http://tmp/ 开头，可能已经是其他可读路径，尝试直接返回
+    if (!tempFilePath.startsWith('http://tmp/') && !tempFilePath.startsWith('https://tmp/')) {
+      return tempFilePath;
+    }
+
+    // http://tmp 开头
+    // 检查离屏 canvas 支持
+    if (typeof wx.createOffscreenCanvas !== 'function') {
+      throw new Error('当前基础库不支持离屏 canvas，无法转换路径');
+    }
+
+    return new Promise((resolve, reject) => {
+      const canvas = wx.createOffscreenCanvas({ type: '2d', width: 300, height: 300 });
+      const ctx = canvas.getContext('2d');
+      const img = canvas.createImage();
+
+      img.onload = () => {
+        // 可以按原图比例绘制，避免拉伸
+        const ratio = img.width / img.height;
+        let drawWidth = 300, drawHeight = 300;
+        if (ratio > 1) {
+          drawHeight = 300 / ratio;
+        } else {
+          drawWidth = 300 * ratio;
+        }
+        // 居中绘制
+        ctx.drawImage(img, (300 - drawWidth) / 2, (300 - drawHeight) / 2, drawWidth, drawHeight);
+
+        // 使用全局 API 导出临时文件
+        wx.canvasToTempFilePath({
+          canvas: canvas,
+          success: (res) => resolve(res.tempFilePath), // 得到 wxfile:// 路径
+          fail: reject
+        });
+      };
+
+      img.onerror = reject;
+      img.src = tempFilePath;
+    });
+  },
+
+  async saveImageToDisk(tempFilePath: string): Promise<void> {
+    try {
+      // 先转换路径（如果是 http://tmp/）
+      let localPath = await this.convertHttpTmpToLocal(tempFilePath);
+      if (tempFilePath.startsWith('http://tmp/') || tempFilePath.startsWith('https://tmp/')) {
+        localPath = await this.convertHttpTmpToLocal(tempFilePath);
+      }
+
+      return new Promise((resolve, reject) => {
+        if (typeof wx.saveFileToDisk !== 'function') {
+          reject(new Error('wx.saveFileToDisk 不可用，请升级基础库'));
+          return;
+        }
+        wx.saveFileToDisk({
+          filePath: localPath,
+          success: () => {
+            wx.showToast({ title: '保存成功', icon: 'success' });
+            resolve();
+          },
+          fail: (err) => {
+            console.error('saveFileToDisk 失败', err);
+            wx.showToast({ title: '保存失败，请重试', icon: 'none' });
+            reject(err);
+          }
+        });
+      });
+    } catch (error) {
+      // 转换失败时的降级处理
+      wx.showToast({ title: '图片处理失败，请使用预览后手动保存', icon: 'none' });
+      console.error('转换路径失败', error);
+      throw error; // 或根据需要处理
+    }
+  },
+
+
+  generateFileName(originalPath: string): string {
+    const ext = originalPath.split('.').pop() || 'png';
+    return `saved_${Date.now()}.${ext}`;
+  },
+
+  async saveImageToUserData(tempFilePath: string): Promise<string> {
+    const localPath = await this.convertHttpTmpToLocal(tempFilePath);
+
+    // 2. 读取文件内容
+    const fs = wx.getFileSystemManager();
+    const data = fs.readFileSync(localPath, 'base64');
+
+    // 3. 生成文件名（保留原扩展名）
+    const ext = tempFilePath.split('.').pop() || 'png';
+    const fileName = `saved_${Date.now()}.${ext}`;
+    const savedPath = `${wx.env.USER_DATA_PATH}/${fileName}`;
+
+    // 4. 写入 USER_DATA_PATH
+    fs.writeFileSync(savedPath, data, 'base64');
+    return savedPath;
+  },
+
+  showSaveSuccess(savedPath: string) {
+    const fileName = savedPath.split('/').pop() || 'saved.png';
+
+    // 判断是否在开发者工具中（路径包含 http://usr/）
+    const isDevtools = savedPath.startsWith('http://usr/');
+
+    if (isDevtools) {
+      // 开发者工具专用提示：引导使用文件管理器
+      wx.showModal({
+        title: '保存成功',
+        content: `图片已保存到开发者工具的用户目录（usr）中。\n\n请按以下步骤找到文件：\n1. 在开发者工具左上角点击「文件管理器」\n2. 选择「用户目录」\n3. 在文件夹中找到文件：${fileName}\n\n（你也可以复制以下虚拟路径到剪贴板，但无法直接在资源管理器打开：\n${savedPath}）`,
+        showCancel: false,
+        confirmText: '知道了'
+      });
+      // 顺便把文件名复制到剪贴板，方便用户搜索
+      wx.setClipboardData({
+        data: fileName,
+        success: () => {
+          console.log('文件名已复制');
+        }
+      });
+    } else {
+      // 真机或PC微信（非devtools）可使用真实路径复制
+      wx.setClipboardData({
+        data: savedPath,
+        success: () => {
+          wx.showModal({
+            title: '保存成功',
+            content: `图片已保存到：\n${savedPath}\n\n路径已复制到剪贴板，请打开「文件资源管理器」，在地址栏粘贴并回车，即可找到文件。`,
+            showCancel: false,
+            confirmText: '知道了'
+          });
+        },
+        fail: () => {
+          wx.showModal({
+            title: '保存成功',
+            content: `图片已保存到：\n${savedPath}\n请手动复制此路径，到资源管理器地址栏打开。`,
+            showCancel: false
+          });
+        }
+      });
+    }
+  },
+
+  showSaveSuccessWithCopy(savedPath: string) {
+    wx.setClipboardData({
+      data: savedPath,
+      success: () => {
+        wx.showModal({
+          title: '保存成功',
+          content: `图片已保存到开发者工具本地目录：\n${savedPath}\n\n路径已复制到剪贴板，请打开「文件资源管理器」并粘贴到地址栏，即可找到该文件。`,
+          confirmText: '预览图片',
+          cancelText: '知道了',
+          success: (res) => {
+            if (res.confirm) {
+              // 预览图片
+              wx.previewImage({
+                urls: [savedPath],
+                fail: () => wx.showToast({ title: '预览失败', icon: 'none' })
+              });
+            }
+          }
+        });
+      },
+      fail: () => {
+        // 复制失败仍然提示路径
+        wx.showModal({
+          title: '保存成功',
+          content: `图片已保存到：\n${savedPath}\n请手动复制此路径，到资源管理器地址栏打开。`,
+          confirmText: '预览',
+          cancelText: '确定',
+          success: (res) => {
+            if (res.confirm) {
+              wx.previewImage({ urls: [savedPath] });
+            }
+          }
+        });
+      }
+    });
+  },
+
+  handleDevtoolsExport(tempFilePath: string) {
+    wx.showModal({
+      title: '开发者工具保存提示',
+      content: '当前环境无法直接保存到系统相册。\n可选择「保存到本地目录」将图片存入开发者工具可访问的文件夹，并复制路径供你快速打开。',
+      confirmText: '保存到本地',
+      cancelText: '仅预览',
+      success: async (res) => {
+        if (res.confirm) {
+          try {
+            const savedPath = await this.saveImageToUserData(tempFilePath);
+            this.showSaveSuccessWithCopy(savedPath);
+          } catch (err) {
+            wx.showToast({ title: '保存失败，请尝试预览', icon: 'none' });
+            console.error('保存失败', err);
+          }
+        } else {
+          // 仅预览
+          wx.previewImage({
+            urls: [tempFilePath],
+            fail: () => wx.showToast({ title: '预览失败', icon: 'none' })
+          });
+        }
+      },
+      fail: () => {
+        // 弹窗失败时降级为预览
+        wx.previewImage({ urls: [tempFilePath] });
+      }
+    });
+  },
+
+  async exportImage() {
+    this.drawPattern(true, async (tempFilePath) => {
+      if (!tempFilePath) {
+        wx.showToast({ title: "导出失败", icon: "none" });
+        return;
+      }
+
+      // 环境判断
+      const isDev = this.isDevtools();
+      const isPC = this.isPCEnvironment() || isDev;
+
+      if (isDev) {
+        // 开发者工具：保存到 USER_DATA_PATH 并复制路径
+        try {
+          const savedPath = await this.saveImageToUserData(tempFilePath);
+          this.showSaveSuccess(savedPath);
+        } catch (e) {
+          wx.showToast({ title: "保存失败，请预览后手动保存", icon: "none" });
+          console.error("保存失败", e);
+          wx.previewImage({ urls: [tempFilePath] });
+        }
+        return;
+      }
+
+      if (isPC) {
+        // PC 微信（非开发者工具）：优先尝试 wx.saveFileToDisk
+        try {
+          const localPath = await this.convertHttpTmpToLocal(tempFilePath);
+          await new Promise((resolve, reject) => {
+            wx.saveFileToDisk({
+              filePath: localPath,
+              success: resolve,
+              fail: reject
+            });
+          });
+          wx.showToast({ title: "保存成功", icon: "success" });
+        } catch (e) {
+          // 降级到 USER_DATA_PATH
+          console.warn("saveFileToDisk 失败，降级到 USER_DATA_PATH", e);
+          try {
+            const savedPath = await this.saveImageToUserData(tempFilePath);
+            this.showSaveSuccess(savedPath);
+          } catch (e2) {
+            wx.showToast({ title: "保存失败，请预览后手动保存", icon: "none" });
+            wx.previewImage({ urls: [tempFilePath] });
+          }
+        }
+        return;
+      }
+
+      // 手机端：保存到相册
+      wx.saveImageToPhotosAlbum({
+        filePath: tempFilePath,
+        success: () => wx.showToast({ title: "已保存到相册" }),
+        fail: (err) => {
+          wx.showToast({ title: "保存失败，请检查权限", icon: "none" });
+          console.error("相册保存失败", err);
+        }
+      });
+    });
+  },
+
+
 
   showDevtoolsExportMenu(tempFilePath: string) {
     // PC 开发者工具：HTTP 临时路径无法直接用系统功能保存。
@@ -2491,7 +2783,7 @@ Page({
   },
 
   async saveTempImageToAlbum(tempFilePath: string) {
-    if (this.isDevtoolsTempPath(tempFilePath)) {
+    if (this.isDevtools()) {
       console.warn("[pattern-export] skip album save for devtools temp path", { tempFilePath });
       this.showDevtoolsExportMenu(tempFilePath);
       return;
