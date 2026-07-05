@@ -15,6 +15,8 @@ import {
 import { aiImageProgressText, nextAiImageProgress } from "../../utils/aiImageProgress";
 import { getStoredAccessCode } from "../../utils/accessCode";
 import { aiImageUrl, createAiImage, getAccessKeySummary, getAiImage, getGeneration, getPalette, recommendPatternSize, uploadGeneration, type ColorComplexity } from "../../utils/api";
+import { generatePatternLocally } from "../../utils/localGeneration";
+import { isLocalSamplingMode } from "../../utils/imageSampling";
 import { calculateExportCellSize, calculatePreviewCanvasSize, calculateZoomedCanvasSize, EXPORT_MAX_CANVAS_SIDE_PX } from "../../utils/canvasSizing";
 import {
   applyEditorPatch,
@@ -53,11 +55,11 @@ type EditorTouchMode = "idle" | "pan" | "paint" | "pinch";
 type EditorTouchPoint = { pageX?: number; pageY?: number; clientX?: number; clientY?: number; x?: number; y?: number };
 type EditorTouchSnapshot = { touches: EditorTouchPoint[]; changedTouches: EditorTouchPoint[] };
 let editorHistoryCache: EditorPatchHistory | null = null;
-let editorStrokeKeysCache: MarkedCells = {};
+let editorPaintKeysCache: MarkedCells = {};
 let editorDrawPending = false;
-let editorStrokeDirty = false;
+let editorPaintDirty = false;
 let editorCanvasCache: { canvas: WechatMiniprogram.Canvas; context: CanvasContextLike; width: number; height: number; pixelRatio: number } | null = null;
-let editorStrokePatchCache: EditorPatch | null = null;
+let editorPaintPatchCache: EditorPatch | null = null;
 let editorRulerCache: { translateX: number; translateY: number; scale: number } | null = null;
 
 type CanvasContextLike = {
@@ -177,9 +179,6 @@ Page({
     editSearchResults: [] as PaletteColor[],
     editPaletteDropdownOpen: false,
     editCandidateColors: [] as EditCandidateColor[],
-    isBatchEditingMode: false,
-    selectedBatchEditColor: null as PaletteColor | null,
-    selectedBatchEditColorText: "未选择颜色",
     // 当前选用的编辑工具。可选："pan"(平移), "point"(单点改色), "paint"(连涂), "picker"(吸管), "fill"(油漆桶填充)
     editorTool: "pan" as EditorTool,
     editorStatusText: "浏览图纸",
@@ -272,9 +271,6 @@ Page({
         editSearchResults: [],
         editPaletteDropdownOpen: false,
         editCandidateColors: [],
-        isBatchEditingMode: false,
-        selectedBatchEditColor: null,
-        selectedBatchEditColorText: "未选择颜色",
         canGenerate: true,
         sizeRecommendationText: "",
         recommendedSizeText: "-",
@@ -595,9 +591,6 @@ Page({
         editSearchResults: [],
         editPaletteDropdownOpen: false,
         editCandidateColors: [],
-        isBatchEditingMode: false,
-        selectedBatchEditColor: null,
-        selectedBatchEditColorText: "未选择颜色"
       });
       this.refreshAiAccessSummary(true);
     } catch (error) {
@@ -634,10 +627,7 @@ Page({
       editSearchQuery: "",
       editSearchResults: [],
       editPaletteDropdownOpen: false,
-      editCandidateColors: [],
-      isBatchEditingMode: false,
-      selectedBatchEditColor: null,
-      selectedBatchEditColorText: "未选择颜色"
+      editCandidateColors: []
     });
   },
 
@@ -657,6 +647,66 @@ Page({
       return;
     }
 
+    // ── 本地生成分支 ──
+    if (
+      patternSource === "original" &&
+      imagePath &&
+      isLocalSamplingMode(samplingMode) &&
+      this.data.paletteColors.length > 0
+    ) {
+      this.setData({ isGenerating: true });
+      try {
+        const result = await generatePatternLocally({
+          imagePath,
+          widthCells,
+          heightCells,
+          samplingMode,
+          colorComplexity,
+          maxColors: normalizedMaxColors,
+          palette: this.data.paletteColors,
+          paletteVersion: "color-pdf-v1",
+        });
+
+        const canvasSize = calculatePreviewCanvasSize(result, wx.getSystemInfoSync().windowWidth);
+        const resultBeadCount = this.calculateUsageTotal(result.usage);
+        this.setData({
+          result,
+          usage: result.usage,
+          resultBeadCount,
+          baseCanvasCssWidth: canvasSize.width,
+          baseCanvasCssHeight: canvasSize.height,
+          canvasCssWidth: canvasSize.width,
+          canvasCssHeight: canvasSize.height,
+          patternZoom: 1,
+          patternZoomText: "100%",
+          pinchStartDistance: 0,
+          pinchStartZoom: 1,
+          isTracingMode: false,
+          isEditingMode: false,
+          traceMarkEnabled: false,
+          traceStatusText: "未选择格子",
+          hoveredTraceCellKey: "",
+          editorGuideCellKey: "",
+          markedTraceCells: {},
+          selectedEditCell: null,
+          selectedEditCellText: "",
+          editSearchQuery: "",
+          editSearchResults: [],
+          editPaletteDropdownOpen: false,
+          editCandidateColors: [],
+        });
+        wx.nextTick(() => {
+          this.drawPattern(false);
+        });
+      } catch (error) {
+        wx.showToast({ title: error instanceof Error ? error.message : "本地生成失败", icon: "none" });
+      } finally {
+        this.setData({ isGenerating: false });
+      }
+      return;
+    }
+
+    // ── 后端 API 分支（原有逻辑）──
     this.setData({ isGenerating: true });
     try {
       const created = await uploadGeneration({
@@ -718,9 +768,6 @@ Page({
         editSearchResults: [],
         editPaletteDropdownOpen: false,
         editCandidateColors: [],
-        isBatchEditingMode: false,
-        selectedBatchEditColor: null,
-        selectedBatchEditColorText: "未选择颜色"
       });
       wx.nextTick(() => {
         this.drawPattern(false);
@@ -785,10 +832,7 @@ Page({
       editSearchQuery: "",
       editSearchResults: [],
       editPaletteDropdownOpen: false,
-      editCandidateColors: [],
-      isBatchEditingMode: false,
-      selectedBatchEditColor: null,
-      selectedBatchEditColorText: "未选择颜色"
+      editCandidateColors: []
     });
     wx.nextTick(() => {
       if (nextEditingMode) {
@@ -974,23 +1018,6 @@ Page({
     });
   },
 
-  selectBatchEditColor(event: WechatMiniprogram.TouchEvent) {
-    this.selectActiveEditColor(event);
-  },
-
-  replaceSelectedCellColor(event: WechatMiniprogram.TouchEvent) {
-    const paletteColor = this.resolvePaletteColorFromEvent(event);
-    if (!paletteColor) {
-      wx.showToast({ title: "未找到色号", icon: "none" });
-      return;
-    }
-    const selection = this.data.selectedEditCell;
-    this.setActiveEditColor(paletteColor);
-    if (selection && this.data.editorTool === "point") {
-      this.applyEditorColor(selection.row, selection.col, paletteColor, "paint");
-    }
-  },
-
   selectActiveEditColor(event: WechatMiniprogram.TouchEvent) {
     const paletteColor = this.resolvePaletteColorFromEvent(event);
     if (!paletteColor) {
@@ -1004,8 +1031,6 @@ Page({
     this.setData({
       activeEditColor: paletteColor,
       activeEditColorText: `${paletteColor.code} ${paletteColor.name}`,
-      selectedBatchEditColor: paletteColor,
-      selectedBatchEditColorText: `${paletteColor.code} ${paletteColor.name}`,
       editCandidateColors: this.buildEditCandidateColors(paletteColor.code)
     });
     // 换颜色本身不影响 canvas 内容，无需重绘
@@ -1063,7 +1088,7 @@ Page({
       result,
       positions,
       newColor,
-      "fill",
+      "point",
       `${targetCode} → ${newColor.code}（${positions.length} 格）`,
       `${positions[0].row}-${positions[0].col}`
     );
@@ -1188,10 +1213,10 @@ Page({
     }
     this.setEditorGuideCell(cell, this.data.editorTool !== "paint");
     if (this.data.editorTool === "paint") {
-      editorStrokeKeysCache = {};
-      editorStrokePatchCache = null;
+      editorPaintKeysCache = {};
+      editorPaintPatchCache = null;
       this.setData({ editorTouchMode: "paint" });
-      this.paintEditorCell(cell.row, cell.col, "stroke", true);
+      this.applyEditorCellColor(cell.row, cell.col, "paint", true);
       return;
     }
     this.handleEditorCellAction(cell.row, cell.col);
@@ -1228,7 +1253,7 @@ Page({
       const cell = this.getEditorCellFromTouch(touch);
       if (cell) {
         this.setEditorGuideCell(cell, false);
-        this.paintEditorCell(cell.row, cell.col, "stroke", true);
+        this.applyEditorCellColor(cell.row, cell.col, "paint", true);
       } else {
         this.clearEditorGuideCell();
       }
@@ -1236,20 +1261,20 @@ Page({
   },
 
   onEditorCanvasTouchEnd() {
-    const shouldFlushStroke = editorStrokeDirty;
-    const strokePatch = editorStrokePatchCache;
-    editorStrokeKeysCache = {};
-    editorStrokePatchCache = null;
-    editorStrokeDirty = false;
-    if (strokePatch?.changes.length) {
-      this.pushEditorPatch(strokePatch);
+    const shouldFlushPaint = editorPaintDirty;
+    const paintPatch = editorPaintPatchCache;
+    editorPaintKeysCache = {};
+    editorPaintPatchCache = null;
+    editorPaintDirty = false;
+    if (paintPatch?.changes.length) {
+      this.pushEditorPatch(paintPatch);
     }
     this.setData({
       editorTouchMode: "idle",
       editorPinchStartDistance: 0
     });
-    if (shouldFlushStroke && this.data.result) {
-      this.flushEditorStrokeState(this.data.result);
+    if (shouldFlushPaint && this.data.result) {
+      this.flushEditorPaintState(this.data.result);
     }
     this.clearEditorGuideCell();
   },
@@ -1316,22 +1341,22 @@ Page({
       return;
     }
 
-    this.paintEditorCell(row, col, "paint", false);
+    this.applyEditorCellColor(row, col, "point", false);
   },
 
-  paintEditorCell(row: number, col: number, patchType: EditorPatchType, isStroke: boolean) {
+  applyEditorCellColor(row: number, col: number, patchType: EditorPatchType, isPaint: boolean) {
     const color = this.data.activeEditColor;
     if (!color) {
       wx.showToast({ title: "请先选择颜色", icon: "none" });
       return;
     }
     const key = `${row}-${col}`;
-    if (isStroke && editorStrokeKeysCache[key]) {
+    if (isPaint && editorPaintKeysCache[key]) {
       return;
     }
     this.applyEditorColor(row, col, color, patchType);
-    if (isStroke) {
-      editorStrokeKeysCache[key] = true;
+    if (isPaint) {
+      editorPaintKeysCache[key] = true;
     }
   },
 
@@ -1374,22 +1399,22 @@ Page({
       return;
     }
     const nextResult = applyEditorPatch(result, patch, "redo");
-    this.commitEditorResult(nextResult, patch, patchType === "stroke");
+    this.commitEditorResult(nextResult, patch, patchType === "paint");
   },
 
   commitEditorResult(nextResult: PatternResult, patch: EditorPatch, deferUi = false) {
     if (!editorHistoryCache) {
       editorHistoryCache = createEditorPatchHistory();
     }
-    if (patch.type === "stroke") {
-      this.mergeStrokePatch(patch);
+    if (patch.type === "paint") {
+      this.mergePaintPatch(patch);
     } else {
       this.pushEditorPatch(patch);
     }
     this.data.result = nextResult;
     this.data.usage = nextResult.usage;
     if (deferUi) {
-      editorStrokeDirty = true;
+      editorPaintDirty = true;
       this.data.hoveredTraceCellKey = patch.selectedKey;
       this.requestEditorCanvasDraw();
       return;
@@ -1463,16 +1488,16 @@ Page({
     editorHistoryCache = pushEditorPatchHistory(editorHistoryCache, patch);
   },
 
-  mergeStrokePatch(patch: EditorPatch) {
+  mergePaintPatch(patch: EditorPatch) {
     if (!patch.changes.length) {
       return;
     }
-    if (!editorStrokePatchCache) {
-      editorStrokePatchCache = { ...patch, changes: [...patch.changes] };
+    if (!editorPaintPatchCache) {
+      editorPaintPatchCache = { ...patch, changes: [...patch.changes] };
       return;
     }
     const changesByKey: Record<string, EditorCellPatch> = {};
-    for (const change of editorStrokePatchCache.changes) {
+    for (const change of editorPaintPatchCache.changes) {
       changesByKey[`${change.row}-${change.col}`] = change;
     }
     for (const change of patch.changes) {
@@ -1480,15 +1505,15 @@ Page({
       const existing = changesByKey[key];
       changesByKey[key] = existing ? { ...change, beforeCell: existing.beforeCell } : change;
     }
-    editorStrokePatchCache = {
-      ...editorStrokePatchCache,
+    editorPaintPatchCache = {
+      ...editorPaintPatchCache,
       label: patch.label,
       selectedKey: patch.selectedKey,
       changes: Object.values(changesByKey)
     };
   },
 
-  flushEditorStrokeState(result: PatternResult) {
+  flushEditorPaintState(result: PatternResult) {
     const selectedKey = this.data.hoveredTraceCellKey;
     this.setData({
       usage: result.usage,
@@ -1669,10 +1694,10 @@ Page({
       : this.data.activeEditColor;
 
     editorHistoryCache = createEditorPatchHistory();
-    editorStrokeKeysCache = {};
-    editorStrokeDirty = false;
+    editorPaintKeysCache = {};
+    editorPaintDirty = false;
     editorCanvasCache = null;
-    editorStrokePatchCache = null;
+    editorPaintPatchCache = null;
 
     this.setData({
       editorCanvasCssWidth: cssWidth,
@@ -1686,8 +1711,6 @@ Page({
       editorStatusText: "浏览图纸",
       activeEditColor: firstColor,
       activeEditColorText: firstColor ? `${firstColor.code} ${firstColor.name}` : "选择颜色",
-      selectedBatchEditColor: firstColor,
-      selectedBatchEditColorText: firstColor ? `${firstColor.code} ${firstColor.name}` : "未选择颜色",
       editCandidateColors: this.buildEditCandidateColors(firstColor?.code),
       editorUndoCount: 0,
       editorRedoCount: 0

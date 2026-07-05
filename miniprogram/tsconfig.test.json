@@ -25,7 +25,13 @@
     "miniprogram/utils/patternSizeWarning.ts",
     "miniprogram/utils/routes.ts",
     "miniprogram/utils/homeContent.ts",
-    "miniprogram/utils/samplingModeOptions.ts"
+    "miniprogram/utils/samplingModeOptions.ts",
+    "miniprogram/utils/colorSpace.ts",
+    "miniprogram/utils/colorMatching.ts",
+    "miniprogram/utils/colorSimplification.ts",
+    "miniprogram/utils/imageSampling.ts",
+    "miniprogram/utils/localGeneration.ts",
+    "miniprogram/utils/paletteData.ts"
   ],
   "exclude": []
 }
