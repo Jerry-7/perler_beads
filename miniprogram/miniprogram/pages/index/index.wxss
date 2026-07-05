@@ -806,7 +806,7 @@
   white-space: nowrap;
 }
 
-.edit-batch-status {
+.edit-cell-status {
   display: flex;
   align-items: center;
   justify-content: space-between;

@@ -33,7 +33,7 @@ export interface EditorTouchDistanceInput {
   viewportTop: number;
 }
 
-export type EditorPatchType = "paint" | "stroke" | "fill";
+export type EditorPatchType = "point" | "paint" | "fill";
 
 export interface EditorCellPatch {
   row: number;

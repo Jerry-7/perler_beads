@@ -215,7 +215,7 @@ test("selecting an edit color does not automatically dim the pattern", () => {
 
 test("editor cell actions allow raw color cells and empty cells to be repainted", () => {
   const methodStart = pageTs.indexOf("handleEditorCellAction(row");
-  const methodEnd = pageTs.indexOf("paintEditorCell(row", methodStart);
+  const methodEnd = pageTs.indexOf("applyEditorCellColor(row", methodStart);
   const methodBody = pageTs.slice(methodStart, methodEnd);
 
   assert(methodStart >= 0, "missing handleEditorCellAction method");
@@ -272,7 +272,7 @@ test("paint stroke moves do not redraw once for guide and again for paint", () =
   assert(methodStart >= 0, "missing editor touch move handler");
   assert(paintBranchStart >= 0, "missing paint move branch");
   assert(paintBranch.includes("this.setEditorGuideCell(cell, false)"), "paint move should update guide state without scheduling its own redraw");
-  assert(paintBranch.includes("this.paintEditorCell"), "paint move should let the paint operation redraw once");
+  assert(paintBranch.includes("this.applyEditorCellColor"), "paint move should let the paint operation redraw once");
 });
 test("single editor paint only redraws the editor canvas", () => {
   const methodStart = pageTs.indexOf("applyEditorColor(row");

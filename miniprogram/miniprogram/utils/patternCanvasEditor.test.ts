@@ -174,7 +174,7 @@ test("editor patch history keeps a 10 operation limit and clears redo on new pat
   const pattern = makePatchPattern();
   for (let index = 0; index < 12; index += 1) {
     history = pushEditorPatchHistory(history, {
-      type: "paint",
+      type: "point",
       label: `paint ${index}`,
       selectedKey: "0-0",
       changes: [{ row: 0, col: 0, beforeCell: pattern.cells[0][0], afterCell: pattern.cells[0][1] }]
@@ -186,7 +186,7 @@ test("editor patch history keeps a 10 operation limit and clears redo on new pat
   assert(undone.patch !== null, "undo should return a patch");
   assertEqual(undone.history.future.length, 1, "redo stack after undo");
   const next = pushEditorPatchHistory(undone.history, {
-    type: "paint",
+    type: "point",
     label: "new paint",
     selectedKey: "0-1",
     changes: [{ row: 0, col: 1, beforeCell: pattern.cells[0][1], afterCell: pattern.cells[0][0] }]
@@ -197,8 +197,8 @@ test("editor patch history keeps a 10 operation limit and clears redo on new pat
 test("editor patch undo and redo restore only changed cells", () => {
   const pattern = makePatchPattern();
   const patch = {
-    type: "stroke" as const,
-    label: "stroke",
+    type: "paint" as const,
+    label: "paint",
     selectedKey: "0-1",
     changes: [
       {

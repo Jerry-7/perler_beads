@@ -396,7 +396,7 @@
         </view>
       </view>
 
-      <view wx:if="{{selectedEditCellText}}" class="edit-batch-status">
+      <view wx:if="{{selectedEditCellText}}" class="edit-cell-status">
         <text>格子</text>
         <text>{{selectedEditCellText}}</text>
       </view>
