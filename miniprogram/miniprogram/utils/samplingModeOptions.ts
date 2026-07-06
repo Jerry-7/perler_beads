@@ -10,11 +10,7 @@ export interface SamplingModeOption {
 export const SAMPLING_MODE_OPTIONS: SamplingModeOption[] = [
   { label: "标准取色", value: "nearest", local: true },
   { label: "精细取色", value: "coverage", local: true },
-  { label: "实物扫描", value: "grid-scan" },
   { label: "中心取色", value: "center-shrink", local: true },
-  { label: "线稿提取", value: "line-art" },
-  { label: "智能并色", value: "cluster-ms" },
-  { label: "密度并色", value: "cluster-dbscan" }
 ];
 
 export const DEFAULT_SAMPLING_MODE_INDEX = 0;

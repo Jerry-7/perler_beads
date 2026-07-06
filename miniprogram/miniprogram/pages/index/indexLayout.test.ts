@@ -76,24 +76,26 @@ test("AI generation panel owns AI-only controls", () => {
   assert(shortcut > shading, "AI result should provide quick pattern shortcut");
 });
 
-test("pattern panel owns upload recommendation and pattern controls", () => {
+test("pattern panel owns upload and interactive controls", () => {
   const panelStart = wxml.indexOf("activeTool === 'pattern'");
   const upload = wxml.indexOf("chooseImage", panelStart);
-  const recommendedSize = wxml.indexOf("recommendedSizeText", panelStart);
-  const recommendedColors = wxml.indexOf("recommendedColors", panelStart);
-  const applyRecommended = wxml.indexOf("applyRecommendedPatternSize", panelStart);
-  const sizeWarning = wxml.indexOf("patternSizeWarning", panelStart);
+  const widthSlider = wxml.indexOf("onWidthChanging", panelStart);
+  const heightSlider = wxml.indexOf("onHeightChanging", panelStart);
+  const aspectLock = wxml.indexOf("onLockAspectRatioChange", panelStart);
   const maxColors = wxml.indexOf("onPatternMaxColorsChange", panelStart);
   const sampling = wxml.indexOf("onSamplingModeChange", panelStart);
+  const colorComplexity = wxml.indexOf("onColorComplexityChange", panelStart);
 
   assert(panelStart >= 0, "missing pattern generation panel");
   assert(upload > panelStart, "pattern panel should have one upload entry");
-  assert(recommendedSize > upload, "pattern panel should show recommended size");
-  assert(recommendedColors > recommendedSize, "pattern panel should show recommended color count");
-  assert(applyRecommended > recommendedColors, "pattern panel should allow applying recommended size");
-  assert(sizeWarning > recommendedColors, "pattern panel should show small-size warning");
-  assert(maxColors > recommendedColors, "pattern panel should expose max color count");
-  assert(sampling > panelStart, "pattern controls should remain available");
+  assert(widthSlider > upload, "pattern panel should have width slider");
+  assert(heightSlider > widthSlider, "pattern panel should have height slider");
+  assert(aspectLock > heightSlider, "pattern panel should have aspect ratio lock");
+  assert(maxColors > aspectLock, "pattern panel should expose max color count slider");
+  assert(sampling > panelStart, "pattern panel should have sampling mode picker");
+  assert(colorComplexity > sampling, "pattern panel should have color complexity picker");
+  // Should NOT have generate button — generation is automatic
+  assert(!wxml.slice(panelStart, wxml.indexOf("result-panel", panelStart)).includes("生成图纸"), "pattern panel should not have manual generate button");
 });
 
 test("pattern debug entry is removed from maker flow", () => {

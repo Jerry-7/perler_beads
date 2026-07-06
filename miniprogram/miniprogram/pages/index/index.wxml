@@ -161,7 +161,7 @@
       <button class="link-button" size="mini" bindtap="backToToolHome">返回</button>
     </view>
 
-    <view class="preview {{patternSource === 'ai' && aiImagePath || imagePath ? 'has-image' : ''}}" bindtap="chooseImage">
+    <view class="preview {{imagePath || (patternSource === 'ai' && aiImagePath) ? 'has-image' : ''}}" bindtap="chooseImage">
       <image wx:if="{{patternSource === 'ai' && aiImagePath}}" class="preview-image" src="{{aiImagePath}}" mode="aspectFit" />
       <image wx:elif="{{imagePath}}" class="preview-image" src="{{imagePath}}" mode="aspectFit" />
       <view wx:else class="empty-preview">
@@ -170,54 +170,38 @@
       </view>
     </view>
 
-    <view wx:if="{{isRecommendingSize || sizeRecommendationText}}" class="hint-strip">
-      <text wx:if="{{isRecommendingSize}}">正在计算推荐参数...</text>
-      <text wx:else>{{sizeRecommendationText}}</text>
-    </view>
-
-    <view class="recommend-grid">
-      <view class="recommend-card">
-        <text class="debug-label">推荐尺寸</text>
-        <text class="debug-value">{{recommendedSizeText}}</text>
+    <view class="field">
+      <text class="field-label">宽度 ({{widthCells}} 格)</text>
+      <view class="slider-row">
+        <button class="stepper-btn" bindtap="stepWidthDown">-</button>
+        <slider min="10" max="200" step="1" value="{{widthCells}}" activeColor="#6366f1" block-size="16" bindchanging="onWidthChanging" bindchange="onWidthChanged" />
+        <button class="stepper-btn" bindtap="stepWidthUp">+</button>
       </view>
-      <view class="recommend-card">
-        <text class="debug-label">推荐颜色数</text>
-        <text class="debug-value">{{recommendedColors || '-'}}</text>
-      </view>
-    </view>
-    <button class="secondary-button compact-button" disabled="{{!recommendedWidthCells || !recommendedHeightCells}}" bindtap="applyRecommendedPatternSize">套用推荐</button>
-    <view wx:if="{{patternSizeWarning}}" class="warning-strip">
-      <text>{{patternSizeWarning}}</text>
     </view>
 
     <view class="field">
-      <text class="field-label">图片来源</text>
-      <view class="source-switch">
-        <button class="source-option {{patternSource === 'original' ? 'active' : ''}}" size="mini" bindtap="selectOriginalPatternSource">上传</button>
-        <button class="source-option {{patternSource === 'ai' ? 'active' : ''}}" size="mini" bindtap="selectAiPatternSource" disabled="{{!aiImageId}}">AI</button>
+      <text class="field-label">高度 ({{heightCells}} 格)</text>
+      <view class="slider-row">
+        <button class="stepper-btn" bindtap="stepHeightDown">-</button>
+        <slider min="10" max="200" step="1" value="{{heightCells}}" activeColor="#6366f1" block-size="16" bindchanging="onHeightChanging" bindchange="onHeightChanged" />
+        <button class="stepper-btn" bindtap="stepHeightUp">+</button>
       </view>
     </view>
 
+    <label class="field checkbox-field" wx:if="{{imageAspectRatio > 0}}">
+      <checkbox checked="{{lockAspectRatio}}" bindchange="onLockAspectRatioChange" />
+      <text>维持原图比例</text>
+    </label>
+
     <label class="field">
-      <text class="field-label">目标尺寸</text>
-      <picker mode="selector" range="{{patternSizeOptions}}" range-key="label" value="{{patternSizeIndex}}" bindchange="onPatternSizeChange">
+      <text class="field-label">采样算法</text>
+      <picker mode="selector" range="{{samplingModeOptions}}" range-key="label" value="{{samplingModeIndex}}" bindchange="onSamplingModeChange">
         <view class="picker-field">
-          <text>{{patternSizeOptions[patternSizeIndex].label}}</text>
+          <text>{{samplingModeOptions[samplingModeIndex].label}}</text>
           <text class="picker-arrow">v</text>
         </view>
       </picker>
     </label>
-
-    <view wx:if="{{isCustomSize}}" class="form-grid">
-      <label class="field">
-        <text class="field-label">宽度格数</text>
-        <input type="number" value="{{widthCells}}" bindinput="onWidthInput" />
-      </label>
-      <label class="field">
-        <text class="field-label">高度格数</text>
-        <input type="number" value="{{heightCells}}" bindinput="onHeightInput" />
-      </label>
-    </view>
 
     <label class="field">
       <text class="field-label">颜色复杂度</text>
@@ -229,36 +213,10 @@
       </picker>
     </label>
 
-    <label class="field">
-      <text class="field-label">图纸效果</text>
-      <picker mode="selector" range="{{samplingModeOptions}}" range-key="label" value="{{samplingModeIndex}}" bindchange="onSamplingModeChange">
-        <view class="picker-field">
-          <text>{{samplingModeOptions[samplingModeIndex].label}}</text>
-          <text class="picker-arrow">v</text>
-        </view>
-      </picker>
-    </label>
-
-    <view wx:if="{{samplingMode === 'cluster-ms'}}" class="field">
-      <text class="field-label">合并力度 ({{clusterQuantile}})</text>
-      <text class="field-hint">越小合并越激进，颜色越少</text>
-      <slider min="5" max="40" step="1" value="{{clusterQuantileSlider}}" activeColor="#6366f1" block-size="16" bindchange="onClusterQuantileChange" />
-    </view>
-
-    <view wx:if="{{samplingMode === 'cluster-dbscan'}}" class="field">
-      <text class="field-label">颜色距离阈值 ({{clusterEps}})</text>
-      <text class="field-hint">越小保留颜色越多，越大合并越多</text>
-      <slider min="10" max="60" step="1" value="{{clusterEps}}" activeColor="#f59e0b" block-size="16" bindchange="onClusterEpsChange" />
-    </view>
-
     <view class="field">
       <text class="field-label">最大颜色数 ({{patternMaxColors}})</text>
       <slider min="4" max="64" step="1" value="{{patternMaxColors}}" activeColor="#10b981" block-size="16" bindchange="onPatternMaxColorsChange" />
     </view>
-
-    <button class="generate-button" loading="{{isGenerating}}" disabled="{{isGenerating || (patternSource === 'ai' ? !aiImageId : !imagePath)}}" bindtap="generatePattern">
-      生成图纸
-    </button>
   </view>
 
   <view wx:if="{{result}}" class="panel result-panel">

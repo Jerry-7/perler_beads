@@ -61,6 +61,7 @@ let editorPaintDirty = false;
 let editorCanvasCache: { canvas: WechatMiniprogram.Canvas; context: CanvasContextLike; width: number; height: number; pixelRatio: number } | null = null;
 let editorPaintPatchCache: EditorPatch | null = null;
 let editorRulerCache: { translateX: number; translateY: number; scale: number } | null = null;
+let autoRegenTimer: ReturnType<typeof setTimeout> | undefined;
 
 type CanvasContextLike = {
   save(): void;
@@ -122,6 +123,8 @@ Page({
     recommendedWidthCells: 0,
     recommendedHeightCells: 0,
     patternSizeWarning: "",
+    lockAspectRatio: true,
+    imageAspectRatio: 0,
     aiDetail: AI_DETAIL_OPTIONS[DEFAULT_AI_DETAIL_INDEX].value as AiDetail,
     aiDetailIndex: DEFAULT_AI_DETAIL_INDEX,
     aiDetailOptions: AI_DETAIL_OPTIONS,
@@ -279,7 +282,8 @@ Page({
         recommendedHeightCells: 0,
         patternSizeWarning: ""
       });
-      this.applyRecommendedSize(path);
+      // 获取原图尺寸，本地计算推荐格子数，自动生成
+      this.autoSizeAndGenerate(path);
     };
 
     if (wx.chooseMedia) {
@@ -315,16 +319,80 @@ Page({
     });
   },
 
-  onWidthInput(event: WechatMiniprogram.Input) {
-    this.setData({ widthCells: Number(event.detail.value) || 0 }, () => {
-      this.refreshPatternSizeWarning();
-    });
+  onWidthChanging(event: WechatMiniprogram.SliderChange) {
+    const width = event.detail.value;
+    this.setData({ widthCells: width });
+    if (this.data.lockAspectRatio && this.data.imageAspectRatio > 0) {
+      this.setData({ heightCells: Math.round(width / this.data.imageAspectRatio) });
+    }
   },
 
-  onHeightInput(event: WechatMiniprogram.Input) {
-    this.setData({ heightCells: Number(event.detail.value) || 0 }, () => {
-      this.refreshPatternSizeWarning();
-    });
+  onWidthChanged() {
+    this.scheduleAutoRegenerate();
+  },
+
+  onHeightChanging(event: WechatMiniprogram.SliderChange) {
+    const height = event.detail.value;
+    this.setData({ heightCells: height });
+    if (this.data.lockAspectRatio && this.data.imageAspectRatio > 0) {
+      this.setData({ widthCells: Math.round(height * this.data.imageAspectRatio) });
+    }
+  },
+
+  onHeightChanged() {
+    this.scheduleAutoRegenerate();
+  },
+
+  stepWidthUp() {
+    const next = Math.min(200, this.data.widthCells + 1);
+    this.setData({ widthCells: next });
+    if (this.data.lockAspectRatio && this.data.imageAspectRatio > 0) {
+      this.setData({ heightCells: Math.round(next / this.data.imageAspectRatio) });
+    }
+    this.scheduleAutoRegenerate();
+  },
+
+  stepWidthDown() {
+    const next = Math.max(10, this.data.widthCells - 1);
+    this.setData({ widthCells: next });
+    if (this.data.lockAspectRatio && this.data.imageAspectRatio > 0) {
+      this.setData({ heightCells: Math.round(next / this.data.imageAspectRatio) });
+    }
+    this.scheduleAutoRegenerate();
+  },
+
+  stepHeightUp() {
+    const next = Math.min(200, this.data.heightCells + 1);
+    this.setData({ heightCells: next });
+    if (this.data.lockAspectRatio && this.data.imageAspectRatio > 0) {
+      this.setData({ widthCells: Math.round(next * this.data.imageAspectRatio) });
+    }
+    this.scheduleAutoRegenerate();
+  },
+
+  stepHeightDown() {
+    const next = Math.max(10, this.data.heightCells - 1);
+    this.setData({ heightCells: next });
+    if (this.data.lockAspectRatio && this.data.imageAspectRatio > 0) {
+      this.setData({ widthCells: Math.round(next * this.data.imageAspectRatio) });
+    }
+    this.scheduleAutoRegenerate();
+  },
+
+  onLockAspectRatioChange(event: { detail: { value: string[] } }) {
+    this.setData({ lockAspectRatio: !!event.detail.value.length });
+  },
+
+  scheduleAutoRegenerate() {
+    if (autoRegenTimer) {
+      clearTimeout(autoRegenTimer);
+    }
+    autoRegenTimer = setTimeout(() => {
+      autoRegenTimer = undefined;
+      if (this.data.result && this.data.imagePath) {
+        this.generatePattern();
+      }
+    }, 400);
   },
 
   onPatternSizeChange(event: WechatMiniprogram.PickerChange) {
@@ -345,6 +413,7 @@ Page({
     const option = this.data.colorComplexityOptions[index];
     if (option) {
       this.setData({ colorComplexity: option.value as ColorComplexity, colorComplexityIndex: index });
+      this.scheduleAutoRegenerate();
     }
   },
 
@@ -353,6 +422,7 @@ Page({
     const option = this.data.samplingModeOptions[index];
     if (option) {
       this.setData({ samplingMode: option.value, samplingModeIndex: index });
+      this.scheduleAutoRegenerate();
     }
   },
 
@@ -414,6 +484,41 @@ Page({
 
   onPatternMaxColorsChange(event: WechatMiniprogram.SliderChange) {
     this.setData({ patternMaxColors: event.detail.value });
+    this.scheduleAutoRegenerate();
+  },
+
+  /** 本地计算推荐格子数（保持宽高比），然后自动生成图纸。 */
+  autoSizeAndGenerate(imagePath: string) {
+    wx.getImageInfo({
+      src: imagePath,
+      success: (res) => {
+        const srcW = res.width;
+        const srcH = res.height;
+        if (srcW > 0 && srcH > 0) {
+          const aspectRatio = srcW / srcH;
+          const TARGET_LONG = 52;
+          let w: number, h: number;
+          if (aspectRatio >= 1) {
+            w = TARGET_LONG;
+            h = Math.max(10, Math.round(TARGET_LONG / aspectRatio));
+          } else {
+            h = TARGET_LONG;
+            w = Math.max(10, Math.round(TARGET_LONG * aspectRatio));
+          }
+          this.setData({
+            widthCells: w,
+            heightCells: h,
+            imageAspectRatio: aspectRatio,
+            lockAspectRatio: true,
+          });
+        }
+        this.generatePattern();
+      },
+      fail: () => {
+        // 获取尺寸失败，用默认尺寸生成
+        this.generatePattern();
+      },
+    });
   },
 
   async applyRecommendedSize(imagePath: string) {
@@ -629,6 +734,7 @@ Page({
       editPaletteDropdownOpen: false,
       editCandidateColors: []
     });
+    this.generatePattern();
   },
 
   async generatePattern() {
