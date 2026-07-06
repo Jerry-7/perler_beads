@@ -19,6 +19,7 @@ import type { AiDetail } from "./aiDetailOptions";
 import type { AiEffect3d, AiShading, AiStyle } from "./aiGenerationOptions";
 import { buildAiImageFormData, buildGenerationFormData, type ColorComplexity, type SourceMode } from "./generationFormData";
 import type { SamplingMode } from "./samplingModeOptions";
+import { resizeImageForUpload } from "./imageSampling";
 
 interface PaletteResponse {
   version: string;
@@ -156,100 +157,108 @@ export function uploadGeneration(input: UploadGenerationInput): Promise<Generati
   if (!input.imagePath) {
     return Promise.reject(new Error("缺少图片"));
   }
-  return new Promise((resolve, reject) => {
-    wx.uploadFile({
-      url: `${API_BASE_URL}/api/generations`,
-      filePath: input.imagePath as string,
-      name: "image",
-      formData,
-      success(response) {
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          try {
-            resolve(JSON.parse(response.data) as GenerationStatus);
-          } catch {
-            reject(new Error("生成结果解析失败"));
+  return resizeImageForUpload(input.imagePath).then((resizedPath) => {
+    return new Promise((resolve, reject) => {
+      wx.uploadFile({
+        url: `${API_BASE_URL}/api/generations`,
+        filePath: resizedPath,
+        name: "image",
+        formData,
+        success(response) {
+          if (response.statusCode >= 200 && response.statusCode < 300) {
+            try {
+              resolve(JSON.parse(response.data) as GenerationStatus);
+            } catch {
+              reject(new Error("生成结果解析失败"));
+            }
+            return;
           }
-          return;
+          reject(new Error(errorMessageFromUploadResponse(response, "上传失败")));
+        },
+        fail(error) {
+          reject(new Error(error.errMsg));
         }
-        reject(new Error(errorMessageFromUploadResponse(response, "上传失败")));
-      },
-      fail(error) {
-        reject(new Error(error.errMsg));
-      }
+      });
     });
   });
 }
 
 export function recommendPatternSize(imagePath: string): Promise<PatternSizeRecommendation> {
-  return new Promise((resolve, reject) => {
-    wx.uploadFile({
-      url: `${API_BASE_URL}/api/pattern-size/recommendation`,
-      filePath: imagePath,
-      name: "image",
-      success(response) {
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          try {
-            resolve(JSON.parse(response.data) as PatternSizeRecommendation);
-          } catch {
-            reject(new Error("推荐尺寸解析失败"));
+  return resizeImageForUpload(imagePath).then((resizedPath) => {
+    return new Promise((resolve, reject) => {
+      wx.uploadFile({
+        url: `${API_BASE_URL}/api/pattern-size/recommendation`,
+        filePath: resizedPath,
+        name: "image",
+        success(response) {
+          if (response.statusCode >= 200 && response.statusCode < 300) {
+            try {
+              resolve(JSON.parse(response.data) as PatternSizeRecommendation);
+            } catch {
+              reject(new Error("推荐尺寸解析失败"));
+            }
+            return;
           }
-          return;
+          reject(new Error(errorMessageFromUploadResponse(response, "推荐尺寸失败")));
+        },
+        fail(error) {
+          reject(new Error(error.errMsg));
         }
-        reject(new Error(errorMessageFromUploadResponse(response, "推荐尺寸失败")));
-      },
-      fail(error) {
-        reject(new Error(error.errMsg));
-      }
+      });
     });
   });
 }
 
 export function analyzePatternDebug(input: AnalyzePatternDebugInput): Promise<PatternDebugAnalysis> {
-  return new Promise((resolve, reject) => {
-    wx.uploadFile({
-      url: `${API_BASE_URL}/api/pattern-debug/analyze`,
-      filePath: input.imagePath,
-      name: "image",
-      formData: { widthCells: String(input.widthCells), heightCells: String(input.heightCells) },
-      success(response) {
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          try {
-            resolve(JSON.parse(response.data) as PatternDebugAnalysis);
-          } catch {
-            reject(new Error("识别过程解析失败"));
+  return resizeImageForUpload(input.imagePath).then((resizedPath) => {
+    return new Promise((resolve, reject) => {
+      wx.uploadFile({
+        url: `${API_BASE_URL}/api/pattern-debug/analyze`,
+        filePath: resizedPath,
+        name: "image",
+        formData: { widthCells: String(input.widthCells), heightCells: String(input.heightCells) },
+        success(response) {
+          if (response.statusCode >= 200 && response.statusCode < 300) {
+            try {
+              resolve(JSON.parse(response.data) as PatternDebugAnalysis);
+            } catch {
+              reject(new Error("识别过程解析失败"));
+            }
+            return;
           }
-          return;
+          reject(new Error(errorMessageFromUploadResponse(response, "识别过程失败")));
+        },
+        fail(error) {
+          reject(new Error(error.errMsg));
         }
-        reject(new Error(errorMessageFromUploadResponse(response, "识别过程失败")));
-      },
-      fail(error) {
-        reject(new Error(error.errMsg));
-      }
+      });
     });
   });
 }
 
 export function createAiImage(input: CreateAiImageInput): Promise<AiImageStatus> {
-  return new Promise((resolve, reject) => {
-    wx.uploadFile({
-      url: `${API_BASE_URL}/api/ai-images`,
-      filePath: input.imagePath,
-      name: "image",
-      formData: buildAiImageFormData(input),
-      success(response) {
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          try {
-            resolve(JSON.parse(response.data) as AiImageStatus);
-          } catch {
-            reject(new Error("AI 图片结果解析失败"));
+  return resizeImageForUpload(input.imagePath).then((resizedPath) => {
+    return new Promise((resolve, reject) => {
+      wx.uploadFile({
+        url: `${API_BASE_URL}/api/ai-images`,
+        filePath: resizedPath,
+        name: "image",
+        formData: buildAiImageFormData(input),
+        success(response) {
+          if (response.statusCode >= 200 && response.statusCode < 300) {
+            try {
+              resolve(JSON.parse(response.data) as AiImageStatus);
+            } catch {
+              reject(new Error("AI 图片结果解析失败"));
+            }
+            return;
           }
-          return;
+          reject(new Error(errorMessageFromUploadResponse(response, "AI 生图失败")));
+        },
+        fail(error) {
+          reject(new Error(error.errMsg));
         }
-        reject(new Error(errorMessageFromUploadResponse(response, "AI 生图失败")));
-      },
-      fail(error) {
-        reject(new Error(error.errMsg));
-      }
+      });
     });
   });
 }

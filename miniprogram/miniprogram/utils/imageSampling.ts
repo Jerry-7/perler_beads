@@ -232,6 +232,72 @@ export function sampleCenterShrink(
 
 // ─── Sampling mode dispatch ───────────────────────────────────────────
 
+// ─── Pre-upload resize (avoids 413 errors) ──────────────────────────
+
+/** Maximum dimension for uploaded images. Larger images are downscaled. */
+const MAX_UPLOAD_DIMENSION = 1024;
+
+/**
+ * Resize an image to fit within MAX_UPLOAD_DIMENSION on the longest side,
+ * then export as a temp file path suitable for wx.uploadFile.
+ *
+ * Images under the limit are returned unchanged.
+ * This prevents 413 "Request Entity Too Large" errors from the server.
+ */
+export function resizeImageForUpload(imagePath: string): Promise<string> {
+  if (typeof wx === "undefined" || typeof wx.createOffscreenCanvas !== "function") {
+    // Fallback: return original path if canvas API unavailable
+    return Promise.resolve(imagePath);
+  }
+
+  return new Promise((resolve, reject) => {
+    const canvas = wx.createOffscreenCanvas({ type: "2d", width: 1, height: 1 });
+    const ctx = canvas.getContext("2d");
+    const img = canvas.createImage();
+
+    img.onload = () => {
+      const srcW = img.width;
+      const srcH = img.height;
+
+      // If image is already small enough, resolve with original path
+      if (Math.max(srcW, srcH) <= MAX_UPLOAD_DIMENSION) {
+        resolve(imagePath);
+        return;
+      }
+
+      // Scale down proportionally
+      const scale = MAX_UPLOAD_DIMENSION / Math.max(srcW, srcH);
+      const destW = Math.round(srcW * scale);
+      const destH = Math.round(srcH * scale);
+
+      canvas.width = destW;
+      canvas.height = destH;
+      ctx.drawImage(img, 0, 0, destW, destH);
+
+      // Export to temp file
+      wx.canvasToTempFilePath({
+        canvas,
+        x: 0,
+        y: 0,
+        width: destW,
+        height: destH,
+        destWidth: destW,
+        destHeight: destH,
+        success: (res: { tempFilePath: string }) => resolve(res.tempFilePath),
+        fail: (err: { errMsg?: string }) => {
+          console.warn("[imageSampling] resize export failed, using original:", err);
+          resolve(imagePath);
+        },
+      });
+    };
+
+    img.onerror = () => resolve(imagePath); // fallback to original
+    img.src = imagePath;
+  });
+}
+
+// ─── Sampling mode dispatch ───────────────────────────────────────────
+
 /** Sampling modes supported by the frontend. */
 export type FrontendSamplingMode = "nearest" | "coverage" | "center-shrink";
 
