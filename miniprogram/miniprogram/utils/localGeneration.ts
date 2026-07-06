@@ -3,16 +3,11 @@
  * Ties together image sampling → color matching → color simplification
  * to produce a PatternResult entirely on the frontend.
  *
- * Usage:
- *   const result = await generatePatternLocally({
- *     imagePath, widthCells, heightCells,
- *     samplingMode, colorComplexity, maxColors,
- *     palette, paletteVersion
- *   });
+ * Caches loaded image pixels so parameter-only changes (width/height/mode)
+ * skip the expensive image-load step.
  */
 import type {
   BeadCell,
-  BeadUsage,
   PaletteColor,
   PatternCell,
   PatternResult,
@@ -34,8 +29,19 @@ import {
   loadImagePixels,
   sampleImage,
   type FrontendSamplingMode,
+  type ImagePixelData,
 } from "./imageSampling";
 import { recalculateUsage } from "./patternEditing";
+
+// ─── Image cache ──────────────────────────────────────────────────────
+
+/** Cached loaded image pixels — reused when only params change, not the image. */
+let cachedImage: { path: string; pixels: ImagePixelData } | null = null;
+
+// ─── Palette cache ────────────────────────────────────────────────────
+
+/** Cached pre-computed palette LAB values. */
+let cachedPaletteLab: { colors: PaletteColor[]; entries: PaletteLabEntry[] } | null = null;
 
 // ─── Input type ───────────────────────────────────────────────────────
 
@@ -55,6 +61,9 @@ export interface LocalGenerationInput {
 /**
  * Run the full local generation pipeline and return a PatternResult
  * compatible with the existing frontend rendering/editing code.
+ *
+ * Image pixels are cached by imagePath. When only grid dimensions
+ * or sampling mode change, the cached pixels are reused instantly.
  */
 export async function generatePatternLocally(
   input: LocalGenerationInput,
@@ -70,11 +79,26 @@ export async function generatePatternLocally(
     throw new Error(`不支持的采样模式: ${input.samplingMode}`);
   }
 
-  // 2. Load image pixels via Canvas
-  const image = await loadImagePixels(input.imagePath);
+  // 2. Load image pixels (cached by path)
+  let image: ImagePixelData;
+  if (cachedImage && cachedImage.path === input.imagePath) {
+    image = cachedImage.pixels;
+  } else {
+    image = await loadImagePixels(input.imagePath);
+    cachedImage = { path: input.imagePath, pixels: image };
+  }
 
-  // 3. Pre-compute palette LAB values (once per generation)
-  const paletteLab = precomputePaletteLab(input.palette);
+  // 3. Pre-compute palette LAB values (cached)
+  let paletteLab: PaletteLabEntry[];
+  if (
+    cachedPaletteLab &&
+    cachedPaletteLab.colors === input.palette
+  ) {
+    paletteLab = cachedPaletteLab.entries;
+  } else {
+    paletteLab = precomputePaletteLab(input.palette);
+    cachedPaletteLab = { colors: input.palette, entries: paletteLab };
+  }
 
   // 4. Sample image to target grid
   const pixelGrid = sampleImage(
@@ -102,10 +126,13 @@ export async function generatePatternLocally(
     simplified = cells;
   }
 
-  // 7. Limit to maxColors
-  const limited = limitBeadColors(simplified, input.maxColors);
+  // 7. Limit colors (skip when maxColors >= 999 — "no limit")
+  const limited =
+    input.maxColors >= 999
+      ? simplified
+      : limitBeadColors(simplified, input.maxColors);
 
-  // 8. Compute usage statistics (reuse existing utility)
+  // 8. Compute usage statistics
   const usage = recalculateUsage(limited);
 
   // 9. Build result

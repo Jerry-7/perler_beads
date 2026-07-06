@@ -82,7 +82,6 @@ test("pattern panel owns upload and interactive controls", () => {
   const widthSlider = wxml.indexOf("onWidthChanging", panelStart);
   const heightSlider = wxml.indexOf("onHeightChanging", panelStart);
   const aspectLock = wxml.indexOf("onLockAspectRatioChange", panelStart);
-  const maxColors = wxml.indexOf("onPatternMaxColorsChange", panelStart);
   const sampling = wxml.indexOf("onSamplingModeChange", panelStart);
   const colorComplexity = wxml.indexOf("onColorComplexityChange", panelStart);
 
@@ -91,7 +90,6 @@ test("pattern panel owns upload and interactive controls", () => {
   assert(widthSlider > upload, "pattern panel should have width slider");
   assert(heightSlider > widthSlider, "pattern panel should have height slider");
   assert(aspectLock > heightSlider, "pattern panel should have aspect ratio lock");
-  assert(maxColors > aspectLock, "pattern panel should expose max color count slider");
   assert(sampling > panelStart, "pattern panel should have sampling mode picker");
   assert(colorComplexity > sampling, "pattern panel should have color complexity picker");
   // Should NOT have generate button — generation is automatic

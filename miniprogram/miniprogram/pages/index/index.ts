@@ -392,7 +392,7 @@ Page({
       if (this.data.result && this.data.imagePath) {
         this.generatePattern();
       }
-    }, 400);
+    }, 200);
   },
 
   onPatternSizeChange(event: WechatMiniprogram.PickerChange) {
@@ -480,11 +480,6 @@ Page({
     if (option) {
       this.setData({ aiShading: option.value, aiShadingIndex: index });
     }
-  },
-
-  onPatternMaxColorsChange(event: WechatMiniprogram.SliderChange) {
-    this.setData({ patternMaxColors: event.detail.value });
-    this.scheduleAutoRegenerate();
   },
 
   /** 本地计算推荐格子数（保持宽高比），然后自动生成图纸。 */
@@ -768,7 +763,7 @@ Page({
           heightCells,
           samplingMode,
           colorComplexity,
-          maxColors: normalizedMaxColors,
+          maxColors: 999, // 不限制颜色数，尽量还原原图
           palette: this.data.paletteColors,
           paletteVersion: "color-pdf-v1",
         });

@@ -212,11 +212,6 @@
         </view>
       </picker>
     </label>
-
-    <view class="field">
-      <text class="field-label">最大颜色数 ({{patternMaxColors}})</text>
-      <slider min="4" max="64" step="1" value="{{patternMaxColors}}" activeColor="#10b981" block-size="16" bindchange="onPatternMaxColorsChange" />
-    </view>
   </view>
 
   <view wx:if="{{result}}" class="panel result-panel">
