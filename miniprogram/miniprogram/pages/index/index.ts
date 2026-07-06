@@ -343,42 +343,6 @@ Page({
     this.scheduleAutoRegenerate();
   },
 
-  stepWidthUp() {
-    const next = Math.min(200, this.data.widthCells + 1);
-    this.setData({ widthCells: next });
-    if (this.data.lockAspectRatio && this.data.imageAspectRatio > 0) {
-      this.setData({ heightCells: Math.round(next / this.data.imageAspectRatio) });
-    }
-    this.scheduleAutoRegenerate();
-  },
-
-  stepWidthDown() {
-    const next = Math.max(10, this.data.widthCells - 1);
-    this.setData({ widthCells: next });
-    if (this.data.lockAspectRatio && this.data.imageAspectRatio > 0) {
-      this.setData({ heightCells: Math.round(next / this.data.imageAspectRatio) });
-    }
-    this.scheduleAutoRegenerate();
-  },
-
-  stepHeightUp() {
-    const next = Math.min(200, this.data.heightCells + 1);
-    this.setData({ heightCells: next });
-    if (this.data.lockAspectRatio && this.data.imageAspectRatio > 0) {
-      this.setData({ widthCells: Math.round(next * this.data.imageAspectRatio) });
-    }
-    this.scheduleAutoRegenerate();
-  },
-
-  stepHeightDown() {
-    const next = Math.max(10, this.data.heightCells - 1);
-    this.setData({ heightCells: next });
-    if (this.data.lockAspectRatio && this.data.imageAspectRatio > 0) {
-      this.setData({ widthCells: Math.round(next * this.data.imageAspectRatio) });
-    }
-    this.scheduleAutoRegenerate();
-  },
-
   onLockAspectRatioChange(event: { detail: { value: string[] } }) {
     this.setData({ lockAspectRatio: !!event.detail.value.length });
   },

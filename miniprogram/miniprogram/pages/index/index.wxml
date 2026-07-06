@@ -172,20 +172,12 @@
 
     <view class="field">
       <text class="field-label">宽度 ({{widthCells}} 格)</text>
-      <view class="slider-row">
-        <button class="stepper-btn" bindtap="stepWidthDown">-</button>
-        <slider min="10" max="200" step="1" value="{{widthCells}}" activeColor="#6366f1" block-size="16" bindchanging="onWidthChanging" bindchange="onWidthChanged" />
-        <button class="stepper-btn" bindtap="stepWidthUp">+</button>
-      </view>
+      <slider min="10" max="200" step="1" value="{{widthCells}}" activeColor="#6366f1" block-size="16" bindchanging="onWidthChanging" bindchange="onWidthChanged" />
     </view>
 
     <view class="field">
       <text class="field-label">高度 ({{heightCells}} 格)</text>
-      <view class="slider-row">
-        <button class="stepper-btn" bindtap="stepHeightDown">-</button>
-        <slider min="10" max="200" step="1" value="{{heightCells}}" activeColor="#6366f1" block-size="16" bindchanging="onHeightChanging" bindchange="onHeightChanged" />
-        <button class="stepper-btn" bindtap="stepHeightUp">+</button>
-      </view>
+      <slider min="10" max="200" step="1" value="{{heightCells}}" activeColor="#6366f1" block-size="16" bindchanging="onHeightChanging" bindchange="onHeightChanged" />
     </view>
 
     <label class="field checkbox-field" wx:if="{{imageAspectRatio > 0}}">
